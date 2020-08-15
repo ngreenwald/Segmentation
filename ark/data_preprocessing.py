@@ -1152,16 +1152,3 @@ tifs = os.listdir('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_P
 tifs = [tif for tif in tifs if '.tif' in tif]
 tifs.sort()
 
-# DCIS preprocessing
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS'
-fovs = io_utils.list_folders(base_dir, 'Point')
-
-# copy selected membrane channel to membrane.tiff to make data loading easier
-for fov in fovs:
-    img_folder = os.path.join(base_dir, fov, 'segmentation_channels')
-    imgs = io_utils.list_files(img_folder, '.tif')
-    imgs.pop(np.where(np.isin(imgs, 'HH3.tif'))[0][0])
-
-    shutil.copy(os.path.join(img_folder, imgs[0]),
-                os.path.join(img_folder, 'membrane.tiff'))
-

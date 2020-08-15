@@ -11,7 +11,7 @@ import scipy.ndimage as nd
 import numpy as np
 import pandas as pd
 
-from segmentation.utils import plot_utils
+from ark.utils import plot_utils
 from skimage.segmentation import find_boundaries
 from skimage.exposure import rescale_intensity
 
@@ -19,13 +19,13 @@ from skimage.measure import regionprops_table
 from skimage.transform import resize
 from sklearn.metrics import r2_score
 
-import FlowCal
 
 from deepcell_toolbox.metrics import Metrics
 
-from segmentation import figures
-from segmentation.utils import data_utils, segmentation_utils
-from segmentation.utils import io_utils
+from ark import figures
+from ark.utils import data_utils, segmentation_utils, io_utils
+from ark.segmentation import marker_quantification
+
 import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
@@ -419,3 +419,39 @@ for folder in folders:
     os.makedirs(potential)
     for img in img_list:
         shutil.copy(os.path.join(base_dir, folder, img), os.path.join(potential, img))
+
+fovs = io_utils.list_folders(base_dir, 'Point')
+
+# copy selected membrane channel to membrane.tiff to make data loading easier
+for fov in fovs:
+    img_folder = os.path.join(base_dir, fov, 'segmentation_channels')
+    imgs = io_utils.list_files(img_folder, '.tif')
+    imgs.pop(np.where(np.isin(imgs, 'HH3.tif'))[0][0])
+
+    shutil.copy(os.path.join(img_folder, imgs[0]),
+                os.path.join(img_folder, 'membrane.tiff'))
+
+channel_data = data_utils.load_imgs_from_tree(base_dir, img_sub_folder='segmentation_channels',
+                                              channels=['HH3.tif', 'membrane.tiff'])
+
+channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
+
+# Since each point has different channels, we need to segment them one at a time
+segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
+
+ecad = pd.DataFrame()
+
+for fov in fovs:
+    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+                                                  img_sub_folder='potential_channels')
+
+    current_labels = segmentation_labels.loc[[fov], :, :, :]
+
+    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
+        segmentation_labels=current_labels,
+        image_data=channel_data,
+        nuclear_counts=True
+    )
+    if 'ECAD' in raw.columns:
+        ecad = ecad.append(raw.loc[:, ['cell_size', 'ECAD', 'HH3', 'label',
+                             'cell_size_nuclear', 'ECAD_nuclear', 'HH3_nuclear', 'label_nuclear']])

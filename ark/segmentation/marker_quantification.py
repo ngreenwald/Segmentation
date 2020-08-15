@@ -133,6 +133,7 @@ def generate_expression_matrix(segmentation_labels, image_data, nuclear_counts=F
     # initialize data frames
     normalized_data = pd.DataFrame()
     arcsinh_data = pd.DataFrame()
+    raw_data = pd.DataFrame()
 
     # loop over each FOV in the dataset
     for fov in segmentation_labels.fovs.values:
@@ -157,6 +158,9 @@ def generate_expression_matrix(segmentation_labels, image_data, nuclear_counts=F
                                                                                transform='arcsinh')
 
         # add data from each FOV to array
+        raw = pd.DataFrame(data=marker_counts.loc['whole_cell', :, :].values,
+                           columns=marker_counts.features)
+
         normalized = pd.DataFrame(data=marker_counts_norm.loc['whole_cell', :, :].values,
                                   columns=marker_counts_norm.features)
 
@@ -177,6 +181,11 @@ def generate_expression_matrix(segmentation_labels, image_data, nuclear_counts=F
                                        columns=nuc_column_names)
             arcsinh = pd.concat((arcsinh, arcsinh_nuc), axis=1)
 
+            # add nuclear counts to raw data
+            raw_nuc = pd.DataFrame(data=marker_counts.loc['nuclear', :, :].values,
+                                   columns=nuc_column_names)
+            raw = pd.concat((raw, raw_nuc), axis=1)
+
         # add column for current FOV
         normalized['fov'] = fov
         normalized_data = normalized_data.append(normalized)
@@ -184,7 +193,10 @@ def generate_expression_matrix(segmentation_labels, image_data, nuclear_counts=F
         arcsinh['fov'] = fov
         arcsinh_data = arcsinh_data.append(arcsinh)
 
-    return normalized_data, arcsinh_data
+        raw['fov'] = fov
+        raw_data = raw_data.append(raw)
+
+    return normalized_data, arcsinh_data, raw_data
 
 
 def compute_complete_expression_matrices(segmentation_labels, tiff_dir, img_sub_folder,
