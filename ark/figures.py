@@ -134,14 +134,13 @@ def get_paired_regionprops(true_labels, pred_labels, true_props_table, pred_prop
         max_idx = np.where(np.isin(overlap_counts, max_overlap))[0][0]
         max_id = overlap_ids[max_idx]
 
-        # get row idx of that true cell
+        # no matching cell
         if max_id == 0:
-            true_field.append(0)
+            pass
         else:
             true_row_idx = np.where(np.isin(true_props_table['label'], max_id))[0][0]
             true_field.append(true_props_table[field][true_row_idx])
-
-        pred_field.append(pred_props_table[field][pred_idx])
+            pred_field.append(pred_props_table[field][pred_idx])
 
     return true_field, pred_field
 

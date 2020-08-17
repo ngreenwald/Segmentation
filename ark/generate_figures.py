@@ -18,6 +18,7 @@ from skimage.exposure import rescale_intensity
 from skimage.measure import regionprops_table
 from skimage.transform import resize
 from sklearn.metrics import r2_score
+from scipy.stats import pearsonr
 
 
 from deepcell_toolbox.metrics import Metrics
@@ -314,20 +315,87 @@ plt.savefig('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project
 #
 #
 
-true_labels = io.imread('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200701_morphology/Point072_true.tiff')
-pred_labels = io.imread('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200701_morphology/Point072_predicted.tiff')
+# morphology comparisons
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200816_val_accuracy'
+true_labels = np.load(os.path.join(base_dir, '20200816_all_data_normalized_512x512val_split.npz'))['y']
+pred_labels = np.load(os.path.join(base_dir, 'cell_labels.npz'))['y']
+pred_labels = np.load(os.path.join(base_dir, 'nuc_labels_expanded.npz'))['y']
 
-pred_props_table = regionprops_table(pred_labels,properties=['label', 'eccentricity', 'centroid'])
-true_props_table = regionprops_table(true_labels,properties=['label', 'eccentricity', 'centroid'])
 
-true_ecc, pred_ecc = figures.get_paired_regionprops(true_labels=true_labels,
-                                                    pred_labels=pred_labels,
-                                                    true_props_table=true_props_table,
-                                                    pred_props_table=pred_props_table,
-                                                    field='eccentricity')
+properties_df = pd.DataFrame()
+for i in range(true_labels.shape[0]):
+    properties = ['label', 'area', 'eccentricity', 'major_axis_length', 'minor_axis_length',
+                  'perimeter', ]
+    pred = pred_labels[i, :, :, 0]
+    true = true_labels[i, :, :, 0]
 
-plt.scatter(true_ecc, pred_ecc)
-r2_score(true_ecc, pred_ecc)
+    if np.max(pred) == 0 or np.max(true) == 0:
+        continue
+    pred_props_table = regionprops_table(pred, properties=properties)
+    true_props_table = regionprops_table(true, properties=properties)
+    properties_dict = {}
+    for prop in properties[1:]:
+        true_prop, pred_prop = figures.get_paired_regionprops(true_labels=true_labels[i, :, :, 0],
+                                                              pred_labels=pred_labels[i, :, :, 0],
+                                                              true_props_table=true_props_table,
+                                                              pred_props_table=pred_props_table,
+                                                              field=prop)
+        properties_dict[prop] = true_prop
+        properties_dict[prop + '_predicted'] = pred_prop
+
+    properties_df = properties_df.append(pd.DataFrame(properties_dict))
+
+
+fig, ax = plt.subplots(2, 3, figsize=(15, 10))
+row_idx = 0
+for i in range(1, len(properties)):
+    prop_name = properties[i]
+    if i > 2:
+        row_idx = 1
+    col_idx = i % 3
+    true_vals = properties_df[prop_name].values
+    predicted_vals = properties_df[prop_name + '_predicted'].values
+
+    import numpy as np
+    from scipy.stats import gaussian_kde
+
+    # Calculate the point density
+    xy = np.vstack([true_vals, predicted_vals])
+    z = gaussian_kde(xy)(xy)
+
+    # Sort the points by density, so that the densest points are plotted last
+    idx = z.argsort()
+    x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
+
+    #ax[row_idx, col_idx].scatter(x=true_vals, y=predicted_vals, alpha=0.01)
+    ax[row_idx, col_idx].scatter(x, y, c=z, s=50, edgecolor='')
+
+    ax[row_idx, col_idx].set_xlabel('True Value')
+    ax[row_idx, col_idx].set_ylabel('Predicted Value')
+    ax[row_idx, col_idx].set_title('Correlation of {}'.format(prop_name))
+
+    import numpy as np
+    from numpy.polynomial.polynomial import polyfit
+    import matplotlib.pyplot as plt
+
+    # Fit with polyfit
+    b, m = polyfit(true_vals,
+                   predicted_vals,
+                   deg=1)
+
+    x = np.arange(0, np.max(properties_df[prop_name].values))
+    ax[row_idx, col_idx].plot(x, b + m * x, '-', color='red')
+    # r2_val = r2_score(properties_df[prop_name].values,
+    #                   properties_df[prop_name + '_predicted'].values)
+    p_r, _ = pearsonr(true_vals, predicted_vals)
+    x_pos = np.max(true_vals) * 0.05
+    y_pos = np.max(predicted_vals) * 0.9
+    ax[row_idx, col_idx].text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
+
+fig.savefig(os.path.join(base_dir, 'morphology_correlation_nuc.png'))
+
+
+
 
 datasets = ['TB_Data', 'TNBC_data']
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200809_cluster_purity/'
@@ -439,7 +507,8 @@ channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
 # Since each point has different channels, we need to segment them one at a time
 segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
 
-ecad = pd.DataFrame()
+
+core_df = pd.DataFrame()
 
 for fov in fovs:
     channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
@@ -452,6 +521,33 @@ for fov in fovs:
         image_data=channel_data,
         nuclear_counts=True
     )
-    if 'ECAD' in raw.columns:
-        ecad = ecad.append(raw.loc[:, ['cell_size', 'ECAD', 'HH3', 'label',
-                             'cell_size_nuclear', 'ECAD_nuclear', 'HH3_nuclear', 'label_nuclear']])
+    core_df = core_df.append(raw, sort=False)
+
+core_df.to_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+
+# read in segmented data
+cell_counts = pd.read_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+cell_counts = cell_counts.loc[cell_counts['cell_size_nuclear'] > 20, :]
+
+
+channels = ['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT', 'pS6']
+
+fig, ax = plt.subplots(2, 5, figsize=(30, 20))
+row_idx = 0
+for i in range(len(channels)):
+    chan_name = channels[i]
+    if i > 4:
+        row_idx = 1
+    col_idx = i % 5
+    channel_counts = cell_counts.loc[:, [chan_name, chan_name + '_nuclear']]
+    cutoff = np.percentile(cell_counts.values[cell_counts.values[:, 0] > 0, 0], [10])
+    channel_counts = channel_counts.loc[channel_counts[chan_name] > cutoff[0], :]
+
+    ratio = channel_counts.values[:, 1] / channel_counts.values[:, 0]
+
+    ax[row_idx, col_idx].hist(ratio, bins=np.arange(0, 1.01, 0.05))
+    avg = np.median(ratio)
+    ax[row_idx, col_idx].axvline(avg, color='red')
+    ax[row_idx, col_idx].set_title('Fraction nuc signal for {}'.format(chan_name))
+
+fig.savefig(os.path.join(base_dir, 'nuclear_fraction.pdf'))

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from segmentation import figures
+from ark import figures
 import importlib
 importlib.reload(figures)
 
