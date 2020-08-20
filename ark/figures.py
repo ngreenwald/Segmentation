@@ -192,7 +192,7 @@ def generate_crop(img_dir, row_start, col_start, length):
     io.imsave(os.path.join(img_dir, 'boundaries_cropped.tiff'), boundaries_cropped)
 
 
-def color_labels_with_map(labels):
+def color_labels_by_graph(labels):
     label_graph = graph.RAG(label_image=labels)
     graph_dict = nx.coloring.greedy_color(label_graph, strategy='largest_first')
 
@@ -210,6 +210,16 @@ def color_labels_with_map(labels):
             output_labels[mask] = val + 1
 
     return output_labels
+
+
+def recolor_labels(mask, values=None):
+    if values is None:
+        values = [100, 130, 160, 190, 220, 250]
+
+    for idx, value in enumerate(values):
+        mask[mask == (idx + 1)] = value
+
+    return mask
 
 
 def generate_inset(img_dir, row_start, col_start, length, inset_num, thickness=2):
@@ -315,3 +325,32 @@ def calculate_alg_f1_scores(image_list, alg_pred):
 
     return f1_list_alg
 
+
+def plot_heatmap(vals, x_labels, y_labels, title, cmap='gist_heat', save_path=None):
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(vals, cmap=cmap)
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(len(x_labels)))
+    ax.set_yticks(np.arange(len(y_labels)))
+    # ... and label them with the respective list entries
+    ax.set_xticklabels(x_labels)
+    ax.set_yticklabels(y_labels)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(len(y_labels)):
+        for j in range(len(x_labels)):
+            text = ax.text(j, i, vals[i, j],
+                           ha="center", va="center", color="w")
+
+    ax.set_title(title)
+    fig.tight_layout()
+    plt.show()
+
+    if save_path:
+        fig.imsave(save_path)

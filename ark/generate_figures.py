@@ -32,114 +32,61 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
 # Figure 2
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200720_lab_meeting/updated_dcis/'
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200820_figure_2_overlays'
 
 # extract TIFs and labels from xarrays
-raw_data = xr.open_dataarray(os.path.join(base_dir, 'deepcell_input.xr'))
-labels = xr.open_dataarray(os.path.join(base_dir, 'segmentation_labels.xr'))
+raw_data = xr.load_dataarray(os.path.join(base_dir, 'deepcell_input.xr'))
+labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels.xr'))
 
+# extract files from arrays
 for fov in raw_data.fovs.values:
     fov_folder = os.path.join(base_dir, fov)
     os.makedirs(fov_folder)
 
     io.imsave(os.path.join(fov_folder, 'DNA.tiff'), raw_data.loc[fov, :, :, 'DNA'].astype('int16'))
     io.imsave(os.path.join(fov_folder, 'Membrane.tiff'), raw_data.loc[fov, :, :, 'Membrane'].astype('int16'))
-    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), labels.loc[fov, :, :, 'whole_cell'])
-    io.imsave(os.path.join(fov_folder, 'nuc_labels.tiff'), labels.loc[fov, :, :, 'nuclear'])
+    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), labels.loc[fov, :, :, 'segmentation_label'])
+    io.imsave(os.path.join(fov_folder, 'nuc_labels.tiff'), labels.loc[fov, :, :, 'segmentation_label'])
 
 
-for fov in raw_data.fovs.values:
-    # figures.preprocess_overlays(os.path.join(base_dir, folder))
+# specify crops for each image
+row_idx_list = [[50, 400], [50, 400], [50, 400]]
+col_idx_list = [[100, 450], [0, 350], [0, 350]]
+
+for idx, fov in enumerate(raw_data.fovs.values):
     DNA = io.imread(os.path.join(base_dir, fov, 'DNA.tiff'))
     Membrane = io.imread(os.path.join(base_dir, fov, 'Membrane.tiff'))
     cell_label = io.imread(os.path.join(base_dir, fov, 'cell_labels.tiff'))
     nuc_label = io.imread(os.path.join(base_dir, fov, 'nuc_labels.tiff'))
-    nuc_label_expanded = figures.nuclear_expansion_pixel(label_map=nuc_label, expansion_radius=4)
-    io.imsave(os.path.join(base_dir, fov, 'nuc_label_expanded.tiff'), nuc_label_expanded)
-
-    # rgb_image = figures.generate_RGB_image(red=None, blue=DNA[100:400, 200:350],
-    #                                        green=Membrane[100:400, 200:350],
-    #                                        percentile_cutoffs=(0, 100))
 
     rgb_image = figures.generate_RGB_image(red=None, blue=DNA,
                                            green=Membrane,
                                            percentile_cutoffs=(0, 100))
-    map_color = figures.color_labels_with_map(cell_label)
 
-    map_color[map_color == 1] = 100
-    map_color[map_color == 2] = 130
-    map_color[map_color == 3] = 160
-    map_color[map_color == 4] = 190
-    map_color[map_color == 5] = 220
-    map_color[map_color == 6] = 250
+    # generate label images
+    label_map_cell = figures.color_labels_by_graph(cell_label)
+    label_map_cell = figures.recolor_labels(label_map_cell)
 
-    io.imsave(os.path.join(base_dir, fov, 'rgb_overlay.tiff'), rgb_image)
+    label_map_nuc = figures.color_labels_by_graph(nuc_label)
+    label_map_nuc = figures.recolor_labels(label_map_nuc)
+
+    io.imsave(os.path.join(base_dir, fov, 'rgb_image.tiff'), rgb_image)
     io.imsave(os.path.join(base_dir, fov, 'greyscale_cell_label_map.tiff'),
-              map_color.astype('uint8'))
-
-    map_color = figures.color_labels_with_map(nuc_label_expanded)
-
-    map_color[map_color == 1] = 100
-    map_color[map_color == 2] = 130
-    map_color[map_color == 3] = 160
-    map_color[map_color == 4] = 190
-    map_color[map_color == 5] = 220
-    map_color[map_color == 6] = 250
+              label_map_cell.astype('uint8'))
 
     io.imsave(os.path.join(base_dir, fov, 'greyscale_nuc_label_map.tiff'),
-              map_color.astype('uint8'))
+              label_map_nuc.astype('uint8'))
 
-# fov_dir = os.path.join(base_dir, '20200424_TB')
-# overlay = io.imread(os.path.join(fov_dir, 'rgb_overlay.tiff'))
-# row_idxs = [112, 512]
-# col_idxs = [0, 300]
-# io.imsave(os.path.join(fov_dir, 'rgb_overlay_cropped.tiff'),
-#           overlay[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
-# label_map = io.imread(os.path.join(fov_dir, 'greyscale_cell_label_map.tiff'))
-# io.imsave(os.path.join(fov_dir, 'greyscale_cell_label_map_cropped.tiff'),
-#           label_map[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
+    imgs = [DNA, Membrane, label_map_cell, label_map_nuc, rgb_image]
+    names = ['DNA', 'Membrane', 'cell_label_map', 'nuc_label_map', 'rgb_image']
 
-# DCIS
-fov_dir = os.path.join(base_dir, '20200116_DCIS')
-row_idxs = [50, 400]
-col_idxs = [100, 450]
-
-# Roshan
-fov_dir = os.path.join(base_dir, '20200219_Roshan')
-row_idxs = [50, 400]
-col_idxs = [0, 350]
-
-DNA = io.imread(os.path.join(fov_dir, 'DNA.tiff'))
-io.imsave(os.path.join(fov_dir, 'DNA_cropped_fat.tiff'),
-          DNA[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
-
-Membrane = io.imread(os.path.join(fov_dir, 'Membrane.tiff'))
-io.imsave(os.path.join(fov_dir, 'Membrane_cropped_fat.tiff'),
-          Membrane[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
-
-overlay = io.imread(os.path.join(fov_dir, 'rgb_overlay.tiff'))
-io.imsave(os.path.join(fov_dir, 'rgb_overlay_cropped_fat.tiff'),
-          overlay[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
-
-label_map = io.imread(os.path.join(fov_dir, 'greyscale_cell_label_map.tiff'))
-io.imsave(os.path.join(fov_dir, 'greyscale_cell_label_map_cropped_fat.tiff'),
-          label_map[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
-
-nuc_label_map = io.imread(os.path.join(fov_dir, 'greyscale_nuc_label_map.tiff'))
-io.imsave(os.path.join(fov_dir, 'greyscale_nuc_label_map_cropped_fat.tiff'),
-          nuc_label_map[row_idxs[0]:row_idxs[1], col_idxs[0]:col_idxs[1]])
+    row_start, row_end = row_idx_list[idx][0], row_idx_list[idx][1]
+    col_start, col_end = col_idx_list[idx][0], col_idx_list[idx][1]
+    for img, name in zip(imgs, names):
+        cropped = img[row_start:row_end, col_start:col_end]
+        io.imsave(os.path.join(base_dir, fov, name + '_cropped.tiff'), cropped)
 
 
-
-figures.preprocess_overlays(base_dir + '20200219_Roshan_test')
-
-figures.generate_crop(base_dir + '20200219_Roshan', row_start=500, col_start=300, length=400)
-
-figures.generate_inset(base_dir + '20200219_Roshan', row_start=100, col_start=200, length=100,
-                       inset_num=1, thickness=2)
-
-figures.generate_inset(base_dir + '20200219_Roshan', row_start=50, col_start=25, length=100,
-                       inset_num=2, thickness=2)
 
 # create overlay
 DNA = io.imread(os.path.join(base_dir, '20200624_graham_pancreas', 'DNA_resized.tiff'))

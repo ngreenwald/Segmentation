@@ -117,3 +117,17 @@ def test_get_paired_regionprops():
                                                                     pred_props_table=pred_frame,
                                                                     field='eccentricity')
     assert match_ecc_true == match_ecc_pred
+
+
+def test_plot_heatmap():
+    vegetables = ["cucumber", "tomato", "lettuce", "asparagus",
+                  "potato", "wheat", "barley"]
+    farmers = ["Farmer Joe", "Upland Bros.", "Smith Gardening",
+               "Agrifun", "Organiculture", "BioGoods Ltd.", "Cornylee Corp."]
+
+    harvest = np.random.random((7, 7))
+    harvest = np.round(harvest, decimals=2)
+
+    figures.plot_heatmap(vals=harvest, x_labels=vegetables, y_labels=farmers, title='test_title',
+                         cmap='Reds')
+
