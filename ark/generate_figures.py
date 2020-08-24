@@ -36,22 +36,19 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 
 # extract TIFs and labels from xarrays
 raw_data = xr.load_dataarray(os.path.join(base_dir, 'deepcell_input.xr'))
-labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels.xr'))
+cell_labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels_cell.xr'))
+nuc_labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels_nuc.xr'))
 
 # extract files from arrays
 for fov in raw_data.fovs.values:
     fov_folder = os.path.join(base_dir, fov)
     os.makedirs(fov_folder)
 
-    io.imsave(os.path.join(fov_folder, 'DNA.tiff'), raw_data.loc[fov, :, :, 'DNA'].astype('int16'))
+    io.imsave(os.path.join(fov_folder, 'DNA.tiff'), raw_data.loc[fov, :, :, 'HH3'].astype('int16'))
     io.imsave(os.path.join(fov_folder, 'Membrane.tiff'), raw_data.loc[fov, :, :, 'Membrane'].astype('int16'))
-    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), labels.loc[fov, :, :, 'segmentation_label'])
-    io.imsave(os.path.join(fov_folder, 'nuc_labels.tiff'), labels.loc[fov, :, :, 'segmentation_label'])
+    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), cell_labels.loc[fov, :, :, 'nuclear'])
+    io.imsave(os.path.join(fov_folder, 'nuc_labels.tiff'), nuc_labels.loc[fov, :, :, 'nuclear'])
 
-
-# specify crops for each image
-row_idx_list = [[50, 400], [50, 400], [50, 400]]
-col_idx_list = [[100, 450], [0, 350], [0, 350]]
 
 for idx, fov in enumerate(raw_data.fovs.values):
     DNA = io.imread(os.path.join(base_dir, fov, 'DNA.tiff'))
@@ -77,8 +74,22 @@ for idx, fov in enumerate(raw_data.fovs.values):
     io.imsave(os.path.join(base_dir, fov, 'greyscale_nuc_label_map.tiff'),
               label_map_nuc.astype('uint8'))
 
-    imgs = [DNA, Membrane, label_map_cell, label_map_nuc, rgb_image]
-    names = ['DNA', 'Membrane', 'cell_label_map', 'nuc_label_map', 'rgb_image']
+# specify crops for each image
+row_idx_list = [[500, 800], [300, 600], [200, 500]]
+col_idx_list = [[700, 1000], [50, 350], [400, 700]]
+
+# create crops
+selected_fovs = ['20200116_DCIS_Point2304', 'P101_T3T4_Point18', 'tb_fov69']
+for idx, fov in enumerate(selected_fovs):
+    DNA = io.imread(os.path.join(base_dir, fov, 'DNA.tiff'))
+    Membrane = io.imread(os.path.join(base_dir, fov, 'Membrane.tiff'))
+    label_map_nuc = io.imread(os.path.join(base_dir, fov, 'greyscale_nuc_label_map.tiff'))
+    label_map_cell = io.imread(os.path.join(base_dir, fov, 'greyscale_cell_label_map.tiff'))
+    rgb_image = io.imread(os.path.join(base_dir, fov, 'rgb_image.tiff'))
+
+    # float32 images
+    imgs = [DNA, Membrane, rgb_image]
+    names = ['DNA', 'Membrane', 'rgb_image']
 
     row_start, row_end = row_idx_list[idx][0], row_idx_list[idx][1]
     col_start, col_end = col_idx_list[idx][0], col_idx_list[idx][1]
@@ -86,135 +97,80 @@ for idx, fov in enumerate(raw_data.fovs.values):
         cropped = img[row_start:row_end, col_start:col_end]
         io.imsave(os.path.join(base_dir, fov, name + '_cropped.tiff'), cropped)
 
-
-
-# create overlay
-DNA = io.imread(os.path.join(base_dir, '20200624_graham_pancreas', 'DNA_resized.tiff'))
-Membrane = io.imread(os.path.join(base_dir, '20200624_graham_pancreas', 'Membrane_resized.tiff'))
-label = io.imread(os.path.join(base_dir, '20200624_graham_pancreas', 'labels_resized.tiff'))
-
-plot_utils.plot_overlay(predicted_contour=label, plotting_tif=np.stack((DNA, Membrane), axis=-1),
-                        percentile_cutoffs=(20, 95))
-
-
-# create overlay
-DNA = io.imread(os.path.join(base_dir, '20200219_Roshan', 'DNA_cropped.tiff'))
-Membrane = io.imread(os.path.join(base_dir, '20200219_Roshan', 'Membrane_cropped.tiff'))
-label = io.imread(os.path.join(base_dir, '20200219_Roshan', 'labels_cropped.tiff'))
-
-figures.preprocess_overlays(base_dir + '20200624_graham_pancreas')
-
-figures.generate_crop(base_dir + '20200226_Melanoma', row_start=300, col_start=300, length=400)
-
-figures.generate_inset(base_dir + '20200226_Melanoma', row_start=100, col_start=200, length=100,
-                       inset_num=1, thickness=2)
-
-figures.generate_inset(base_dir + '20200226_Melanoma', row_start=50, col_start=25, length=100,
-                       inset_num=2, thickness=2)
-
-# create paired overlay and crop
-plot_dir = base_dir + '20200219_Roshan/'
-DNA = io.imread(plot_dir + 'DNA_cropped.tiff')
-Membrane = io.imread(plot_dir + 'Membrane_cropped.tiff')
-label = io.imread(plot_dir + 'labels.tiff')
-label = resize(label, [label.shape[0] * 2, label.shape[1] * 2], order=0, preserve_range=True)
-label = label[300:700, 300:700]
-label = label[500:900, 300:700]
-
-io.imsave(plot_dir + 'labels_cropped_whole_label.tiff', label.astype('int16'))
-
-
-DNA = DNA[:, :300]
-Membrane = Membrane[:, :300]
-label = label[:, :300]
-
-io.imsave(plot_dir + 'DNA_cropped_side_by_side.tiff', DNA)
-io.imsave(plot_dir + 'Membrane_cropped_side_by_side.tiff', Membrane)
-
-label = label / np.max(label)
-label_colormap = cm.jet(label)
-io.imsave(plot_dir + 'Label_cropped_side_by_side_new.tiff', label_colormap.astype('float32'))
-
-
-io.imsave(plot_dir + 'Label_cropped_Side_by_side_new_greyscale.tiff', label_shrunk.astype('uint8'))
-
-test_img = np.zeros((10, 10))
-test_img[:5, :5] = 1
-test_img[:5, 5:10] = 2
-
-test_img_small = erosion(test_img, selem=skimage.morphology.disk(1))
-
-# expansion
-expansion_labels = figures.nuclear_expansion_pixel(label_map=nuclear_label, expansion_radius=4)
-
-expansion_outline = find_boundaries(expansion_labels, connectivity=1, mode='inner').astype('uint8')
-expansion_outline[expansion_outline > 0] = 255
-io.imsave(os.path.join(base_dir, 'watershed_outline.tiff'), expansion_outline)
-
-plot_utils.plot_overlay(predicted_contour=watershed_labels,  #[100:200, :100],
-                        plotting_tif=combined_data,  # [100:200, :100, :],
-                        path=os.path.join(base_dir, 'watershed_expansion.tiff'))
-
-plot_utils.plot_overlay(predicted_contour=watershed_labels[120:180, 20:80],
-                        plotting_tif=combined_data[120:180, 20:80, :],
-                        path=os.path.join(base_dir, 'watershed_expansion_cropped.tiff'))
-
-plot_utils.plot_overlay(predicted_contour=expansion_labels, plotting_tif=combined_data,
-                        path=os.path.join(base_dir, 'nuclear_expansion.tiff'))
-
-plot_utils.plot_overlay(predicted_contour=expansion_labels[120:180, 20:80],
-                        plotting_tif=combined_data[120:180, 20:80],
-                        path=os.path.join(base_dir, 'nuclear_expansion_cropped.tiff'))
-
-
-plot_utils.plot_overlay(predicted_contour=true_label, plotting_tif=combined_data,
-                        path=os.path.join(base_dir, 'true_label.tiff'))
-
-plot_utils.plot_overlay(predicted_contour=true_label[120:180, 20:80],
-                        plotting_tif=combined_data[120:180, 20:80],
-                        path=os.path.join(base_dir, 'true_label_cropped.tiff'))
-
-relabeled, _, _ = skimage.segmentation.relabel_sequential(true_label)
-randomized = plot_utils.randomize_labels(relabeled)
-
-x = cm.cubehelix(true_label)
-x[expansion_outline > 0] = 255
-io.imshow(x)
-io.imsave(os.path.join(base_dir, 'true_labels_border_outline.tiff'), x.astype('float32'))
-# CMYK image generation
-
-
-rescaled = np.zeros((200, 200, 3), dtype='uint8')
-
-for idx in range(1, 3):
-
-    percentiles = np.percentile(combined_data[:, :, idx][combined_data[:, :, idx] > 0],
-                                [5, 95])
-    rescaled_intensity = rescale_intensity(combined_data[:, :, idx],
-                                           in_range=(percentiles[0], percentiles[1]),
-                                           out_range='uint8')
-    rescaled[:, :, idx] = rescaled_intensity
-
-io.imsave(os.path.join(base_dir, 'overlay_channels.tiff'), rescaled)
-
-from skimage.exposure import rescale_intensity
-
-DNA = io.imread(base_dir + 'DNA.tiff')
-Membrane = io.imread(base_dir + 'Membrane.tiff')
-
-DNA_unscaled = rescale_intensity(DNA, out_range='uint8').astype('uint8')
-DNA_256 = Image.fromarray(rescale_intensity(DNA, out_range='uint8').astype('uint8'))
-DNA_256_invert = DNA_256.point(lambda i: 256 - i)
-
-Membrane_256 = Image.fromarray(rescale_intensity(Membrane, out_range='uint8').astype('uint8'))
-Membrane_256_invert = Membrane_256.point(lambda i: 256 - i)
-blank_256 = Image.fromarray(np.zeros((512, 512), dtype='uint8'))
-
-merged_5 = Image.merge('CMYK', (DNA_256, blank_256, blank_256, Membrane_256))
-merged_5.save(base_dir + 'combined_5.jpg')
-
+    imgs_uint8 = [label_map_cell, label_map_nuc]
+    names_uint8 = ['cell_label_map', 'nuc_label_map']
+    for img, name in zip(imgs_uint8, names_uint8):
+        cropped = img[row_start:row_end, col_start:col_end]
+        io.imsave(os.path.join(base_dir, fov, name + '_cropped.tiff'), cropped.astype('uint8'))
 
 # Figure 3
+
+# Make sure all data is max 1024x1024
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200820_figure_3_data'
+folders = io_utils.list_folders(data_dir)
+for folder in folders:
+    folder_path = os.path.join(data_dir, folder)
+    DNA = io.imread(os.path.join(folder_path, 'DNA.tiff'))
+    Membrane = io.imread(os.path.join(folder_path, 'Membrane.tiff'))
+    io.imsave(os.path.join(folder_path, 'DNA_cropped.tiff'), DNA[:1000, :1000])
+    io.imsave(os.path.join(folder_path, 'Membrane_cropped.tiff'), Membrane[:1000, :1000])
+
+# plotting
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200821_figure_3_overlays'
+
+# extract TIFs and labels from xarrays
+raw_data = xr.load_dataarray(os.path.join(base_dir, 'deepcell_input.xr'))
+labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels.xr'))
+
+# extract files from arrays
+for fov in raw_data.fovs.values:
+    fov_folder = os.path.join(base_dir, fov)
+    os.makedirs(fov_folder)
+
+    io.imsave(os.path.join(fov_folder, 'DNA.tiff'), raw_data.loc[fov, :, :, 'DNA_cropped'].astype('float32'))
+    io.imsave(os.path.join(fov_folder, 'Membrane.tiff'), raw_data.loc[fov, :, :, 'Membrane_cropped'].astype('float32'))
+    io.imsave(os.path.join(fov_folder, 'labels.tiff'), labels.loc[fov, :, :, 'whole_cell'].astype('int16'))
+
+for idx, fov in enumerate(raw_data.fovs.values):
+    folder_path = os.path.join(base_dir, fov)
+    figures.preprocess_overlays(folder_path)
+
+    DNA = io.imread(os.path.join(folder_path, 'DNA_resized.tiff'))
+    Membrane = io.imread(os.path.join(folder_path, 'Membrane_resized.tiff'))
+    label = io.imread(os.path.join(folder_path, 'labels_resized.tiff'))
+    boundary = io.imread(os.path.join(folder_path, 'boundaries_resized.tiff'))
+
+    rgb_image = figures.generate_RGB_image(red=None, blue=DNA,
+                                           green=Membrane,
+                                           percentile_cutoffs=(0, 100))
+    max_val = np.max(rgb_image)
+    overlay = np.copy(rgb_image)
+    overlay[boundary > 0, :] = max_val / 2
+
+    io.imsave(os.path.join(folder_path, 'rgb_image_resized.tiff'), rgb_image)
+    io.imsave(os.path.join(folder_path, 'rgb_overlay_resized.tiff'), overlay)
+
+# # specify crops for each image
+row_idx_list = [[400, 700]] * 12
+col_idx_list = [[400, 700]] * 12
+
+# create crops
+for idx, fov in enumerate(raw_data.fovs.values):
+    DNA = io.imread(os.path.join(base_dir, fov, 'DNA_resized.tiff'))
+    Membrane = io.imread(os.path.join(base_dir, fov, 'Membrane_resized.tiff'))
+    boundary = io.imread(os.path.join(base_dir, fov, 'boundaries_resized.tiff'))
+    rgb_image = io.imread(os.path.join(base_dir, fov, 'rgb_overlay_resized.tiff'))
+
+    imgs = [DNA, Membrane, boundary, rgb_image]
+    names = ['DNA', 'Membrane', 'boundaries', 'rgb_image']
+
+    row_start, row_end = row_idx_list[idx][0], row_idx_list[idx][1]
+    col_start, col_end = col_idx_list[idx][0], col_idx_list[idx][1]
+    for img, name in zip(imgs, names):
+        cropped = img[row_start:row_end, col_start:col_end]
+        io.imsave(os.path.join(base_dir, fov, name + '_resized_cropped.tiff'), cropped)
+
+
 
 # Human Comparison
 # save segmentation labels to each folder
@@ -266,8 +222,7 @@ plt.savefig('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200816_val_accuracy'
 true_labels = np.load(os.path.join(base_dir, '20200816_all_data_normalized_512x512val_split.npz'))['y']
 pred_labels = np.load(os.path.join(base_dir, 'cell_labels.npz'))['y']
-pred_labels = np.load(os.path.join(base_dir, 'nuc_labels_expanded.npz'))['y']
-
+# pred_labels = np.load(os.path.join(base_dir, 'nuc_labels_expanded.npz'))['y']
 
 properties_df = pd.DataFrame()
 for i in range(true_labels.shape[0]):

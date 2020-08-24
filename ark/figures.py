@@ -147,7 +147,6 @@ def get_paired_regionprops(true_labels, pred_labels, true_props_table, pred_prop
 
 def preprocess_overlays(img_dir):
     DNA = io.imread(os.path.join(img_dir, 'DNA.tiff'))
-    #DNA = gaussian_filter(DNA, 1)
     DNA = resize(DNA, [DNA.shape[0] * 2, DNA.shape[1] * 2], order=3)
     DNA = DNA.astype('float32')
     DNA = DNA / np.max(DNA)
@@ -158,14 +157,15 @@ def preprocess_overlays(img_dir):
     Membrane = Membrane / np.max(Membrane)
 
     labels = io.imread(os.path.join(img_dir, 'labels.tiff'))
-    labels = resize(labels, [labels.shape[0] * 2, labels.shape[1] * 2],
-                    order=0, preserve_range=True)
-    labels = labels.astype('int16')
     boundaries_sub = find_boundaries(labels.astype('int'), connectivity=1, mode='subpixel')
 
     # subpixel producing an image with len i * 2 - 1, need to pad with a single pixel
     boundaries = np.zeros_like(Membrane)
     boundaries[:-1, :-1] = boundaries_sub
+
+    labels = resize(labels, [labels.shape[0] * 2, labels.shape[1] * 2],
+                    order=0, preserve_range=True)
+    labels = labels.astype('int16')
 
     io.imsave(os.path.join(img_dir, 'DNA_resized.tiff'), DNA)
     io.imsave(os.path.join(img_dir, 'Membrane_resized.tiff'), Membrane)

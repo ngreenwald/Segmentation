@@ -278,20 +278,28 @@ composite = io.imread(base_dir + "TONSIL-1_40X.ome.tif")
 for chan in range(composite.shape[0]):
     io.imsave(base_dir + "Channel_{}.tif".format(chan + 1), composite[chan, :, :])
 
+
+# create summed membrane channel
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200209_CyCIF_SciRep'
+Keratin = io.imread(os.path.join(base_dir, 'fovs', 'Lung-1-LN', 'LUNG-1-LN_40X_15.tif'))
+CD45 = io.imread(os.path.join(base_dir, 'fovs', 'Lung-1-LN', 'LUNG-1-LN_40X_19.tif'))
+combined_membrane = Keratin.astype('int32') + CD45.astype('int32')
+io.imsave(os.path.join(base_dir, 'fovs', 'Lung-1-LN', 'combined_membrane.tiff'), combined_membrane)
+
 # generate crops
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200209_CyCIF_SciRep/Great/'
-fovs = os.listdir(base_dir + 'renamed_channels')
-fovs = [fov for fov in fovs if os.path.isdir(os.path.join(base_dir, 'renamed_channels', fov))]
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200209_CyCIF_Lung/'
+fovs = ['Lung-1-LN']
 
 for fov in fovs:
-    data = data_utils.load_imgs_from_dir(data_dir=os.path.join(base_dir, 'renamed_channels'),
-                                         fovs=[fov], dtype='int32',
-                                         imgs=['DNA.tif', 'Membrane.tif'])
+    data = data_utils.load_imgs_from_tree(data_dir=os.path.join(base_dir, 'renamed_channels'),
+                                          fovs=[fov], dtype='int32',
+                                          channels=['DNA.tif', 'Membrane.tif'])
 
     cropped_data = data_utils.crop_image_stack(data.values, 512, 1)
     for crop in range(cropped_data.shape[0]):
         folder = os.path.join(base_dir, 'cropped/{}_crop_{}'.format(fov, crop))
-        os.makedirs(folder)
+        if not os.path.exists((folder)):
+            os.makedirs(folder)
         io.imsave(os.path.join(folder, 'DNA.tiff'), cropped_data[crop, :, :, 0])
         io.imsave(os.path.join(folder, 'Membrane.tiff'), cropped_data[crop, :, :, 1])
 
@@ -968,6 +976,35 @@ for chan in range(stitched_imgs.shape[-1]):
     img = stitched_imgs[0, :, :, chan]
     io.imsave(os.path.join(base_dir + 'stitched', stitched_imgs.channels.values[chan] + '_stitched.tiff'), img)
 
+# CODEX normal GI processing
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200707_CODEX_GI/'
+
+fovs = io_utils.list_folders(base_dir + 'fovs')
+os.makedirs(base_dir + 'cropped')
+# crop images
+for fov in fovs:
+
+    # create combined membrane
+    keratin = io.imread(os.path.join(base_dir, 'fovs', fov, 'Keratin.tiff'))
+    CD45 = io.imread(os.path.join(base_dir, 'fovs', fov, 'CD45.tiff'))
+    combined_membrane = keratin.astype('int32') + CD45.astype('int32')
+    io.imsave(os.path.join(base_dir, 'fovs', fov, 'combined_membrane.tiff'), combined_membrane)
+
+    # load data
+    data = data_utils.load_imgs_from_tree(data_dir=os.path.join(base_dir, 'fovs'),
+                                          fovs=[fov],
+                                          channels=['HOESCHT1.tiff', 'combined_membrane.tiff'],
+                                          dtype='int32')
+
+    cropped_data = data_utils.crop_image_stack(data.values, 512, 1)
+    for crop in range(cropped_data.shape[0]):
+        folder = os.path.join(base_dir, 'cropped/{}_crop_{}'.format(fov, crop))
+        os.makedirs(folder)
+        io.imsave(os.path.join(folder, 'DNA.tiff'), cropped_data[crop, :, :, 0])
+        io.imsave(os.path.join(folder, 'Membrane.tiff'), cropped_data[crop, :, :, 1])
+
+
+
 # MIBI SCC processing
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200625_SCC/'
 folders = io_utils.list_folders(base_dir)
@@ -1152,3 +1189,64 @@ tifs = os.listdir('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_P
 tifs = [tif for tif in tifs if '.tif' in tif]
 tifs.sort()
 
+# Monkey data
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200730_alea_data/'
+
+# stitch images together for easy visualization
+all_imgs = data_utils.load_imgs_from_tree(data_dir=base_dir + 'fovs', dtype='int32')
+
+stitched_imgs = data_utils.stitch_images(all_imgs, 5)
+
+os.makedirs(os.path.join(base_dir, 'stitched'))
+for chan in range(stitched_imgs.shape[-1]):
+    img = stitched_imgs[0, :, :, chan]
+    io.imsave(os.path.join(base_dir + 'stitched', stitched_imgs.channels.values[chan] + '_stitched.tiff'), img)
+
+
+os.makedirs(os.path.join(base_dir, 'cropped'))
+fovs = io_utils.list_folders(base_dir + 'selected_fovs')
+
+# crop images
+for fov in fovs:
+    data = data_utils.load_imgs_from_tree(data_dir=os.path.join(base_dir, 'selected_fovs'),
+                                          fovs=[fov], channels=['HH3.tif', 'CD45.tif'])
+
+    cropped_data = data_utils.crop_image_stack(data.values, 512, 1)
+    for crop in range(cropped_data.shape[0]):
+        folder = os.path.join(base_dir, 'cropped/{}_crop_{}'.format(fov, crop))
+        os.makedirs(folder)
+        io.imsave(os.path.join(folder, 'DNA.tiff'), cropped_data[crop, :, :, 0])
+        io.imsave(os.path.join(folder, 'Membrane.tiff'), cropped_data[crop, :, :, 1])
+
+# sizun nasal data
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/20200719_sizun_nasal/'
+
+# stitch images together for easy visualization
+all_imgs = data_utils.load_imgs_from_tree(data_dir=base_dir + 'fovs',
+                                          channels=['ACTUB.tiff', 'Cytokeratin 5.tiff', 'Cytokeratin 8.tiff',
+                                                    'MUC5B.tiff', 'MUC5AC.tiff', 'Pan-Keratin.tiff',
+                                                    'dsDNA.tiff'],
+                                          img_sub_folder='TIFsNoBg')
+
+stitched_imgs = data_utils.stitch_images(all_imgs, 5)
+
+os.makedirs(os.path.join(base_dir, 'stitched'))
+for chan in range(stitched_imgs.shape[-1]):
+    img = stitched_imgs[0, :, :, chan]
+    io.imsave(os.path.join(base_dir + 'stitched', stitched_imgs.channels.values[chan] + '_stitched.tiff'), img)
+
+
+os.makedirs(os.path.join(base_dir, 'cropped'))
+fovs = io_utils.list_folders(base_dir + 'selected_fovs')
+
+# crop images
+for fov in fovs:
+    data = data_utils.load_imgs_from_tree(data_dir=os.path.join(base_dir, 'selected_fovs'),
+                                          fovs=[fov], channels=['HH3.tif', 'CD45.tif'])
+
+    cropped_data = data_utils.crop_image_stack(data.values, 512, 1)
+    for crop in range(cropped_data.shape[0]):
+        folder = os.path.join(base_dir, 'cropped/{}_crop_{}'.format(fov, crop))
+        os.makedirs(folder)
+        io.imsave(os.path.join(folder, 'DNA.tiff'), cropped_data[crop, :, :, 0])
+        io.imsave(os.path.join(folder, 'Membrane.tiff'), cropped_data[crop, :, :, 1])
