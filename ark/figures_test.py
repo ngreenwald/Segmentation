@@ -119,6 +119,22 @@ def test_get_paired_regionprops():
     assert match_ecc_true == match_ecc_pred
 
 
+def test_create_f1_score_grid():
+    summary_dict1 = {'tissue1': {'f1': 0.5}, 'tissue2': {'f1': 0.6}, 'tissue3': {'f1': 0.7},
+                     'all': {'f1': 0.6}}
+    summary_dict2 = {'tissue1': {'f1': 0.55}, 'tissue2': {'f1': 0.65}, 'tissue3': {'f1': 0.75},
+                     'all': {'f1': 0.7}}
+    summary_dict3 = {'tissue1': {'f1': 0.6}, 'tissue2': {'f1': 0.7}, 'tissue3': {'f1': 0.8},
+                     'all': {'f1': 0.8}}
+    summary_dict4 = {'tissue1': {'f1': 0.6}, 'tissue2': {'f1': 0.7}, 'tissue3': {'f1': 0.8},
+                     'all': {'f1': 0.8}}
+
+    dict_list = [summary_dict1, summary_dict2, summary_dict3, summary_dict4]
+
+    grid = figures.create_f1_score_grid(category_dicts=dict_list,
+                                        names=['tissue1', 'tissue2', 'tissue3', 'all'])
+
+
 def test_plot_heatmap():
     vegetables = ["cucumber", "tomato", "lettuce", "asparagus",
                   "potato", "wheat", "barley"]
@@ -130,4 +146,15 @@ def test_plot_heatmap():
 
     figures.plot_heatmap(vals=harvest, x_labels=vegetables, y_labels=farmers, title='test_title',
                          cmap='Reds')
+
+
+def test_calculate_annotator_time():
+    starts = [' 10:00', ' 11:00', ' 12:01']
+    ends = [' 10:05', ' 12:00', ' 13:05']
+
+    job_report = pd.DataFrame({'_started_at': starts, '_created_at': ends})
+
+    elapsed_time = figures.calculate_annotator_time(job_report=job_report)
+
+    assert elapsed_time == 60 * 5 + 60 * 60 + 60 * 64
 

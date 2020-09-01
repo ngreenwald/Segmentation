@@ -31,13 +31,68 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
+# Figure 1
+# Compute total annotator time
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/caliban_files/'
+tissue_types = io_utils.list_folders(base_dir, substrs='20')
+
+total_time = 0
+for tissue in tissue_types:
+    job_folders = io_utils.list_folders(os.path.join(base_dir, tissue))
+    for job in job_folders:
+        job_report = os.path.join(base_dir, tissue, job, 'logs/job_report.csv')
+        if os.path.exists(job_report):
+            job_csv = pd.read_csv(job_report)
+            job_time = figures.calculate_annotator_time(job_report=job_csv)
+            total_time += job_time
+        else:
+            print('No file found in {}'.format(os.path.join(tissue, job)))
+
+internal_time = pd.read_csv('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/datasets/annotation_hours.csv')
+internal_hours = np.sum(internal_time['Total Hours'])
+
+fig, ax = plt.subplots(figsize=(3, 3))
+figures.barchart_helper(ax=ax, values=[total_time / 3600, internal_hours],
+                        labels=['Annotators', 'Internal'],
+                        title='Total hours',
+                        colors='blue', y_max=np.max(total_time / 3600) * 1.2)
+fig.tight_layout()
+fig.savefig(os.path.join('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200830_figure_1', 'hours.tiff'))
+
+# counts by modality
+tissue_counts = np.load('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200830_figure_1/tissue_counts.npz',
+                        allow_pickle=True)['stats'].item()
+
+tissue_counts = pd.DataFrame(tissue_counts)
+fig, ax = plt.subplots(figsize=(5, 5))
+figures.barchart_helper(ax=ax, values=tissue_counts.iloc[0, :].values,
+                        labels=tissue_counts.columns.values,
+                        title='Cells per tissue type', colors='blue',
+                        y_max=250000)
+fig.tight_layout()
+fig.savefig(os.path.join('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200830_figure_1', 'annotations_per_tissue.tiff'))
+
+# counts by modality
+platform_counts = np.load('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200830_figure_1/platform_counts.npz',
+                        allow_pickle=True)['stats'].item()
+
+platform_counts = pd.DataFrame(platform_counts)
+fig, ax = plt.subplots(figsize=(5, 5))
+figures.barchart_helper(ax=ax, values=platform_counts.iloc[0, :].values,
+                        labels=platform_counts.columns.values,
+                        title='Cells per platform type', colors='blue',
+                        y_max=250000)
+fig.tight_layout()
+fig.savefig(os.path.join('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200830_figure_1', 'annotations_per_platform.tiff'))
+
 # Figure 2
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200820_figure_2_data/'
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200820_figure_2_overlays'
 
 # extract TIFs and labels from xarrays
-raw_data = xr.load_dataarray(os.path.join(base_dir, 'deepcell_input.xr'))
-cell_labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels_cell.xr'))
-nuc_labels = xr.load_dataarray(os.path.join(base_dir, 'segmentation_labels_nuc.xr'))
+raw_data = xr.load_dataarray(os.path.join(data_dir, 'deepcell_input.xr'))
+cell_labels = xr.load_dataarray(os.path.join(data_dir, 'segmentation_labels_cell.xr'))
+nuc_labels = xr.load_dataarray(os.path.join(data_dir, 'segmentation_labels_nuc.xr'))
 
 # extract files from arrays
 for fov in raw_data.fovs.values:
@@ -46,7 +101,7 @@ for fov in raw_data.fovs.values:
 
     io.imsave(os.path.join(fov_folder, 'DNA.tiff'), raw_data.loc[fov, :, :, 'HH3'].astype('int16'))
     io.imsave(os.path.join(fov_folder, 'Membrane.tiff'), raw_data.loc[fov, :, :, 'Membrane'].astype('int16'))
-    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), cell_labels.loc[fov, :, :, 'nuclear'])
+    io.imsave(os.path.join(fov_folder, 'cell_labels.tiff'), cell_labels.loc[fov, :, :, 'whole_cell'])
     io.imsave(os.path.join(fov_folder, 'nuc_labels.tiff'), nuc_labels.loc[fov, :, :, 'nuclear'])
 
 
@@ -75,11 +130,11 @@ for idx, fov in enumerate(raw_data.fovs.values):
               label_map_nuc.astype('uint8'))
 
 # specify crops for each image
-row_idx_list = [[500, 800], [300, 600], [200, 500]]
-col_idx_list = [[700, 1000], [50, 350], [400, 700]]
+row_idx_list = [[250, 550], [300, 600], [200, 500]]
+col_idx_list = [[50, 250], [100, 300], [400, 600]]
 
 # create crops
-selected_fovs = ['20200116_DCIS_Point2304', 'P101_T3T4_Point18', 'tb_fov69']
+selected_fovs = ['20200116_DCIS_Point2304', 'P101_T3T4_Point18', 'hiv_Point12']
 for idx, fov in enumerate(selected_fovs):
     DNA = io.imread(os.path.join(base_dir, fov, 'DNA.tiff'))
     Membrane = io.imread(os.path.join(base_dir, fov, 'Membrane.tiff'))
@@ -103,6 +158,34 @@ for idx, fov in enumerate(selected_fovs):
         cropped = img[row_start:row_end, col_start:col_end]
         io.imsave(os.path.join(base_dir, fov, name + '_cropped.tiff'), cropped.astype('uint8'))
 
+    # phenotyping markers
+    imgs = io_utils.list_files(os.path.join(base_dir, fov, 'phenotyping'))
+    for img in imgs:
+        current_img = io.imread(os.path.join(base_dir, fov, 'phenotyping', img))
+        current_img = current_img[row_start:row_end, col_start:col_end]
+        io.imsave(os.path.join(base_dir, fov, 'phenotyping', img + '_cropped.tiff'), current_img)
+
+# accuracy plots
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200828_figure_2_accuracy/'
+whole_cell = np.load(base_dir + 'MIBI_accuracy_whole_cell.npz', allow_pickle=True)['stats'].item()['all']
+nuclear_expansion = np.load(base_dir + 'MIBI_accuracy_nuclear_expansion.npz', allow_pickle=True)['stats'].item()['all']
+
+plotting_keys = ['missed_detections', 'gained_detections', 'merge', 'split', 'catastrophe']
+whole_cell_plotting = {key: whole_cell[key] for key in plotting_keys}
+nuclear_plotting = {key: nuclear_expansion[key] for key in plotting_keys}
+
+figures.plot_error_types((whole_cell_plotting, nuclear_plotting),
+                         method_labels=['whole_cell', 'nuclear_expansion'],
+                         error_labels=plotting_keys,
+                         colors=['blue', 'red'], ylim=(0, 30000))
+
+fig, ax = plt.subplots(figsize=(5, 5))
+
+f1_scores = [whole_cell['f1'], nuclear_expansion['f1']]
+figures.barchart_helper(ax=ax, values=f1_scores, labels=['whole_cell', 'nuclear'],
+                        title='F1 score', colors=['blue', 'red'], y_lim=(0, 1))
+
+fig.savefig(base_dir + 'f1_score.tiff')
 # Figure 3
 
 # Make sure all data is max 1024x1024
@@ -190,8 +273,7 @@ folder_names = ['DCIS_MIBI', 'Colon_IF', 'Esophagus_MIBI', 'Hodgekins_Vectra']
 for i in range(len(folders)):
     # get all of the human annotations
     folder_path = os.path.join(base_dir, folders[i], 'annotations')
-    img_names = os.listdir(folder_path)
-    img_names = [img for img in img_names if '.tiff' in img]
+    img_names = io_utils.list_files(folder_path, '.tiff')
     imgs = []
     for img in img_names:
         current_img = io.imread(os.path.join(folder_path, img))
@@ -211,7 +293,34 @@ for i in range(len(folders)):
 
 
 figures.plot_annotator_agreement(f1_scores_list=f1_score_values, labels=f1_score_labels)
+plt.tight_layout()
 plt.savefig('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200720_lab_meeting/human_comparison.pdf', transparent=True)
+
+# Accuracy heatmaps
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200825_figure_3_heatmaps/'
+vectra = np.load(base_dir + 'vectra_accuracy.npz', allow_pickle=True)['stats'].item()
+mibi = np.load(base_dir + 'mibi_accuracy.npz', allow_pickle=True)['stats'].item()
+all_platform = np.load(base_dir + 'all_platform_accuracy.npz', allow_pickle=True)['stats'].item()
+
+gi = np.load(base_dir + 'gi_accuracy.npz', allow_pickle=True)['stats'].item()
+breast = np.load(base_dir + 'breast_accuracy.npz', allow_pickle=True)['stats'].item()
+pancreas = np.load(base_dir + 'pancreas_accuracy.npz', allow_pickle=True)['stats'].item()
+all_tissue = np.load(base_dir + 'all_tissue_accuracy.npz', allow_pickle=True)['stats'].item()
+
+tissue_types = ['gi', 'breast', 'pancreas', 'all']
+save_path = os.path.join(base_dir, 'tissue_heatmap.tiff')
+platform_array = figures.create_f1_score_grid([gi, breast, pancreas, all_tissue], tissue_types)
+figures.plot_heatmap(vals=platform_array.values, x_labels=tissue_types, y_labels=tissue_types,
+                     title='accuracy across tissue types',
+                     save_path=os.path.join(base_dir, 'tissue_heatmap.tiff'), cmap='Reds')
+
+
+platform_types = ['vectra', 'mibi', 'all']
+save_path = os.path.join(base_dir, 'platform_heatmap.tiff')
+platform_array = figures.create_f1_score_grid([vectra, mibi, all_platform], platform_types)
+figures.plot_heatmap(vals=platform_array.values, x_labels=platform_types, y_labels=platform_types,
+                     title='accuracy across platforms',
+                     save_path=os.path.join(base_dir, 'platform_heatmap.tiff'), cmap='Reds')
 
 
 # Figure 4

@@ -12,6 +12,8 @@ import networkx as nx
 from skimage.transform import resize
 from skimage.segmentation import find_boundaries
 from skimage.future import graph
+from datetime import datetime, timedelta
+
 
 from skimage.exposure import rescale_intensity
 from deepcell_toolbox.metrics import Metrics
@@ -36,7 +38,7 @@ def plot_mod_ap(mod_ap_list, thresholds, labels):
     fig.show()
 
 
-def plot_error_types(error_dicts, method_labels, error_labels, colors):
+def plot_error_types(error_dicts, method_labels, error_labels, colors, ylim=None):
     data_dict = pd.DataFrame(pd.Series(error_dicts[0])).transpose()
 
     # create single dict with all errors
@@ -48,19 +50,13 @@ def plot_error_types(error_dicts, method_labels, error_labels, colors):
     fig, axes = plt.subplots(1, len(error_labels), figsize=(15, 4))
     for i in range(len(error_labels)):
         barchart_helper(ax=axes[i], values=data_dict[error_labels[i]], labels=method_labels,
-                        title='{} Errors'.format(error_labels[i]), colors=colors, y_max=80)
+                        title='{} Errors'.format(error_labels[i]), colors=colors, y_lim=ylim)
 
     fig.show()
     #fig.tight_layout()
 
 
-def plot_f1_scores(f1_list, method_list, colors):
-    fig, ax = plt.subplots(figsize=(8, 8))
-    barchart_helper(ax=ax, values=f1_list, labels=method_list, title='F1 scores', colors=colors,
-                    y_max=80)
-
-
-def barchart_helper(ax, values, labels, title, colors, y_max):
+def barchart_helper(ax, values, labels, title, colors, y_lim=None):
 
     # bars are evenly spaced based on number of categories
     positions = range(len(values))
@@ -71,9 +67,8 @@ def barchart_helper(ax, values, labels, title, colors, y_max):
     ax.set_xticklabels(labels)
 
     # y ticks
-    y_positions = np.arange(0, y_max, 10)
-    ax.set_yticks(y_positions)
-    ax.set_yticklabels(y_positions)
+    if y_lim is not None:
+        ax.set_ylim(y_lim)
 
     # Hide the right and top spines
     ax.spines['right'].set_visible(False)
@@ -326,6 +321,27 @@ def calculate_alg_f1_scores(image_list, alg_pred):
     return f1_list_alg
 
 
+def create_f1_score_grid(category_dicts, names):
+    """Create a grid of f1 scores across different models"""
+
+    vals = np.zeros((len(names), len(names)))
+
+    grid = pd.DataFrame(vals, columns=names, index=names)
+
+    for i in range(len(names)):
+        current_model = names[i]
+        print('current model is {}'.format(current_model))
+        subset_dict = category_dicts[i]
+        for dataset_name in names:
+            print('current dataset is {}'.format(dataset_name))
+            if dataset_name in subset_dict:
+                f1 = subset_dict[dataset_name]['f1']
+                print('f1 score is {}'.format(f1))
+                grid.loc[current_model, dataset_name] = f1
+
+    return grid
+
+
 def plot_heatmap(vals, x_labels, y_labels, title, cmap='gist_heat', save_path=None):
 
     fig, ax = plt.subplots()
@@ -345,7 +361,8 @@ def plot_heatmap(vals, x_labels, y_labels, title, cmap='gist_heat', save_path=No
     # Loop over data dimensions and create text annotations.
     for i in range(len(y_labels)):
         for j in range(len(x_labels)):
-            text = ax.text(j, i, vals[i, j],
+            current_val = np.round(vals[i, j], 2)
+            text = ax.text(j, i, current_val,
                            ha="center", va="center", color="w")
 
     ax.set_title(title)
@@ -353,4 +370,39 @@ def plot_heatmap(vals, x_labels, y_labels, title, cmap='gist_heat', save_path=No
     plt.show()
 
     if save_path:
-        fig.imsave(save_path)
+        fig.savefig(save_path)
+
+
+def calculate_annotator_time(job_report):
+    """Takes a job report and calculates the total amount of time spent on the job
+
+    Args:
+        job_report: pandas array containing relevant info
+
+    Returns:
+        int: total number of seconds elapsed in job
+    """
+
+    total_time = 0
+
+    for i in range(len(job_report)):
+        start_time = job_report.loc[i, '_started_at'].split(' ')[1]
+        end_time = job_report.loc[i, '_created_at'].split(' ')[1]
+
+        try:
+            start_time = datetime.strptime(start_time, '%H:%M:%S').time()
+        except ValueError:
+            start_time = datetime.strptime(start_time, '%H:%M').time()
+        start_time = timedelta(hours=start_time.hour, minutes=start_time.minute)
+
+        try:
+            end_time = datetime.strptime(end_time, '%H:%M:%S').time()
+        except ValueError:
+            end_time = datetime.strptime(end_time, '%H:%M').time()
+
+        end_time = timedelta(hours=end_time.hour, minutes=end_time.minute)
+
+        difference = end_time - start_time
+        total_time += difference.seconds
+
+    return total_time
