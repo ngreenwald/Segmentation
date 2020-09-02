@@ -324,50 +324,51 @@ figures.plot_heatmap(vals=platform_array.values, x_labels=platform_types, y_labe
 
 
 # Figure 4
-#
-#
 
 # morphology comparisons
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200816_val_accuracy'
-true_labels = np.load(os.path.join(base_dir, '20200816_all_data_normalized_512x512val_split.npz'))['y']
-pred_labels = np.load(os.path.join(base_dir, 'cell_labels.npz'))['y']
-# pred_labels = np.load(os.path.join(base_dir, 'nuc_labels_expanded.npz'))['y']
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
+true_dict = np.load(os.path.join(base_dir, '20200827_multiplex_COH_normalized_512x512_test.npz'))
+true_labels = true_dict['y'].astype('int16')
+tissue_list = true_dict['tissue_list']
+platform_list = true_dict['platform_list']
+nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuclear.npz'))['y']
+cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_whole_cell.npz'))['y']
 
 properties_df = pd.DataFrame()
-for i in range(true_labels.shape[0]):
-    properties = ['label', 'area', 'eccentricity', 'major_axis_length', 'minor_axis_length',
-                  'perimeter', ]
-    pred = pred_labels[i, :, :, 0]
-    true = true_labels[i, :, :, 0]
+properties = ['label', 'area', 'major_axis_length', 'perimeter', 'minor_axis_length']
 
-    if np.max(pred) == 0 or np.max(true) == 0:
-        continue
-    pred_props_table = regionprops_table(pred, properties=properties)
-    true_props_table = regionprops_table(true, properties=properties)
-    properties_dict = {}
-    for prop in properties[1:]:
-        true_prop, pred_prop = figures.get_paired_regionprops(true_labels=true_labels[i, :, :, 0],
-                                                              pred_labels=pred_labels[i, :, :, 0],
-                                                              true_props_table=true_props_table,
-                                                              pred_props_table=pred_props_table,
-                                                              field=prop)
-        properties_dict[prop] = true_prop
-        properties_dict[prop + '_predicted'] = pred_prop
+gi_idx = np.isin(tissue_list, 'breast')
+platform_idx = np.isin(platform_list, 'mibi')
+idx = gi_idx * platform_idx
+immune_idx = np.isin(tissue_list, 'immune')
 
-    properties_df = properties_df.append(pd.DataFrame(properties_dict))
+cell_prop_df = figures.generate_morphology_metrics(true_labels=true_labels,
+                                                   pred_labels=cell_labels,
+                                                   properties=properties)
+
+nuc_prop_df = figures.generate_morphology_metrics(true_labels=true_labels,
+                                                  pred_labels=nuc_labels,
+                                                  properties=properties)
+
+ratio = cell_prop_df['major_axis_length_true'].values / cell_prop_df['minor_axis_length_true'].values
+round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
+skew_idx = np.logical_or(ratio < 0.6, ratio > 1.5)
+
+cell_nonzero_idx = cell_prop_df['area_pred'] > 0
+nuc_nonzero_idx = nuc_prop_df['area_pred'] > 0
+
+cell_idx = skew_idx * cell_nonzero_idx
+nuc_idx = skew_idx * nuc_nonzero_idx
+
+cell_prop_plot = cell_prop_df[cell_idx]
+true_size_cell, pred_size_cell = cell_prop_plot['area_true'].values, cell_prop_plot['area_pred'].values
+
+nuc_prop_plot = nuc_prop_df[nuc_idx]
+true_size_nuc, pred_size_nuc = nuc_prop_plot['area_true'].values, nuc_prop_plot['area_pred'].values
 
 
-fig, ax = plt.subplots(2, 3, figsize=(15, 10))
-row_idx = 0
-for i in range(1, len(properties)):
-    prop_name = properties[i]
-    if i > 2:
-        row_idx = 1
-    col_idx = i % 3
-    true_vals = properties_df[prop_name].values
-    predicted_vals = properties_df[prop_name + '_predicted'].values
-
-    import numpy as np
+# create density scatter
+def create_density_scatter(ax, true_vals, predicted_vals):
     from scipy.stats import gaussian_kde
 
     # Calculate the point density
@@ -377,36 +378,167 @@ for i in range(1, len(properties)):
     # Sort the points by density, so that the densest points are plotted last
     idx = z.argsort()
     x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
+    ax.scatter(x, y, c=z, s=50, edgecolor='')
 
-    #ax[row_idx, col_idx].scatter(x=true_vals, y=predicted_vals, alpha=0.01)
-    ax[row_idx, col_idx].scatter(x, y, c=z, s=50, edgecolor='')
 
-    ax[row_idx, col_idx].set_xlabel('True Value')
-    ax[row_idx, col_idx].set_ylabel('Predicted Value')
-    ax[row_idx, col_idx].set_title('Correlation of {}'.format(prop_name))
-
-    import numpy as np
-    from numpy.polynomial.polynomial import polyfit
-    import matplotlib.pyplot as plt
-
-    # Fit with polyfit
-    b, m = polyfit(true_vals,
-                   predicted_vals,
-                   deg=1)
-
-    x = np.arange(0, np.max(properties_df[prop_name].values))
-    ax[row_idx, col_idx].plot(x, b + m * x, '-', color='red')
-    # r2_val = r2_score(properties_df[prop_name].values,
-    #                   properties_df[prop_name + '_predicted'].values)
-    p_r, _ = pearsonr(true_vals, predicted_vals)
+def label_morphology_scatter(ax, true_vals, pred_vals):
+    x = np.arange(0, np.max(true_vals))
+    ax.plot(x, x, '-', color='red')
+    p_r, _ = pearsonr(true_vals, pred_vals)
     x_pos = np.max(true_vals) * 0.05
-    y_pos = np.max(predicted_vals) * 0.9
-    ax[row_idx, col_idx].text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
+    y_pos = np.max(pred_vals) * 0.9
+    ax.text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
+    ax.set_xlabel('True Value')
+    ax.set_ylabel('Predicted Value')
+
+
+fig, ax = plt.subplots()
+
+create_density_scatter(ax, true_size_cell, pred_size_cell)
+label_morphology_scatter(ax, true_size_cell, pred_size_cell)
+ax.set_title('Cell Area Accuracy')
+
+fig.savefig(os.path.join(base_dir, 'Cell_Area_skewed_scatter.pdf'))
+
+fig, ax = plt.subplots(2, 1, figsize=(15, 10))
+plot_props = properties[1:]
+for i in range(len(plot_props)):
+    for df_idx, df in enumerate([cell_prop_df.loc[round_idx], nuc_prop_df.loc[round_idx]]):
+        prop_name = plot_props[i]
+        true_vals = df[prop_name + '_true'].values
+        predicted_vals = df[prop_name + '_pred'].values
+
+        from scipy.stats import gaussian_kde
+
+        # Calculate the point density
+        xy = np.vstack([true_vals, predicted_vals])
+        z = gaussian_kde(xy)(xy)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = z.argsort()
+        x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
+
+        #ax[row_idx, col_idx].scatter(x=true_vals, y=predicted_vals, alpha=0.01)
+        ax[df_idx, i].scatter(x, y, c=z, s=50, edgecolor='')
+
+        ax[df_idx, i].set_xlabel('True Value')
+        ax[df_idx, i].set_ylabel('Predicted Value')
+        ax[df_idx, i].set_title('Correlation of {}'.format(prop_name))
+
+
+        x = np.arange(0, np.max(df[prop_name + '_true'].values))
+        ax[df_idx, i].plot(x, x, '-', color='red')
+        p_r, _ = pearsonr(true_vals, predicted_vals)
+        x_pos = np.max(true_vals) * 0.05
+        y_pos = np.max(predicted_vals) * 0.9
+        ax[df_idx, i].text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
 
 fig.savefig(os.path.join(base_dir, 'morphology_correlation_nuc.png'))
 
 
+# subcellular localization
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
+all_imgs = data_utils.load_imgs_from_tree(data_dir=base_dir)
+stitched_imgs = data_utils.stitch_images(all_imgs, 5)
 
+# move potential images
+img_list = ['CD44.tif', 'COX2.tif', 'ECAD.tif', 'GLUT1.tif', 'HER2.tif', 'HH3.tif',
+            'Ki67.tif', 'P.tif', 'PanKRT.tif', 'pS6.tif']
+
+folders = io_utils.list_folders(base_dir, 'Point')
+
+for folder in folders:
+    potential = os.path.join(base_dir, folder, 'potential_channels')
+    os.makedirs(potential)
+    for img in img_list:
+        shutil.copy(os.path.join(base_dir, folder, img), os.path.join(potential, img))
+
+fovs = io_utils.list_folders(base_dir, 'Point')
+
+# copy selected membrane channel to membrane.tiff to make data loading easier
+for fov in fovs:
+    img_folder = os.path.join(base_dir, fov, 'segmentation_channels')
+    imgs = io_utils.list_files(img_folder, '.tif')
+    imgs.pop(np.where(np.isin(imgs, 'HH3.tif'))[0][0])
+
+    shutil.copy(os.path.join(img_folder, imgs[0]),
+                os.path.join(img_folder, 'membrane.tiff'))
+
+channel_data = data_utils.load_imgs_from_tree(base_dir, img_sub_folder='segmentation_channels',
+                                              channels=['HH3.tif', 'membrane.tiff'])
+
+channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
+
+# Since each point has different channels, we need to segment them one at a time
+segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
+
+core_df = pd.DataFrame()
+
+for fov in fovs:
+    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+                                                  img_sub_folder='potential_channels')
+
+    current_labels = segmentation_labels.loc[[fov], :, :, :]
+
+    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
+        segmentation_labels=current_labels,
+        image_data=channel_data,
+        nuclear_counts=True
+    )
+    core_df = core_df.append(raw, sort=False)
+
+core_df.to_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+
+# save segmentation mask outlines
+for idx, fov in enumerate(segmentation_labels.fovs.values):
+    nuc_label = segmentation_labels.loc[fov, :, :, 'nuclear']
+    cell_label = segmentation_labels.loc[fov, :, :, 'whole_cell']
+
+    nuc_boundary = find_boundaries(nuc_label.values, mode='inner').astype('uint8')
+    nuc_boundary[nuc_boundary > 0] = 255
+    cell_boundary = find_boundaries(cell_label.values, mode='inner').astype('uint8')
+    cell_boundary[cell_boundary > 0] = 255
+
+    io.imsave(os.path.join(base_dir, fov, 'nuc_boundary.tiff'), nuc_boundary)
+    io.imsave(os.path.join(base_dir, fov, 'cell_boundary.tiff'), cell_boundary)
+
+# read in segmented data
+cell_counts = pd.read_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+cell_counts = cell_counts.loc[cell_counts['cell_size_nuclear'] > 20, :]
+
+
+channels = np.array(['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT', 'pS6'])
+nuc_frac = []
+
+# compute nuclear fraction
+for i in range(len(channels)):
+    chan_name = channels[i]
+    channel_counts = cell_counts.loc[:, [chan_name, chan_name + '_nuclear']]
+    cutoff = np.percentile(cell_counts.values[cell_counts.values[:, 0] > 0, 0], [10])
+    channel_counts = channel_counts.loc[channel_counts[chan_name] > cutoff[0], :]
+
+    ratio = channel_counts.values[:, 1] / channel_counts.values[:, 0]
+    avg_ratio = np.mean(ratio)
+    nuc_frac.append(avg_ratio)
+
+cell_frac = [1 - nuc for nuc in nuc_frac]
+
+# sort by increasing cell fraction
+sort_idx = np.argsort(cell_frac)
+channels, nuc_frac, cell_frac = channels[sort_idx], np.array(nuc_frac)[sort_idx], np.array(cell_frac)[sort_idx]
+plt.style.use('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/code/ark-analysis/ark/test_stylesheet.mplstyle')
+plt.style.use('seaborn-colorblind')
+
+fig, ax = plt.subplots()
+width = 0.35
+ax.bar(channels, nuc_frac, label='Nuclear Fraction')
+ax.bar(channels, cell_frac, bottom=nuc_frac, label='Cell Fraction')
+# Hide the right and top spines
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+fig.savefig(base_dir + 'subcellular_barchart.pdf')
+
+# cluster purity
 
 datasets = ['TB_Data', 'TNBC_data']
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200809_cluster_purity/'
@@ -481,84 +613,3 @@ plt.scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
 fig, ax = plt.subplots(2, 1)
 ax[0].scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
 ax[1].scatter(panc_cell['Glucagon'].values, panc_cell['Proinsulin'].values)
-
-# subcellular localization
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
-all_imgs = data_utils.load_imgs_from_tree(data_dir=base_dir)
-stitched_imgs = data_utils.stitch_images(all_imgs, 5)
-
-# move potential images
-img_list = ['CD44.tif', 'COX2.tif', 'ECAD.tif', 'GLUT1.tif', 'HER2.tif', 'HH3.tif',
-            'Ki67.tif', 'P.tif', 'PanKRT.tif', 'pS6.tif']
-
-folders = io_utils.list_folders(base_dir, 'Point')
-
-for folder in folders:
-    potential = os.path.join(base_dir, folder, 'potential_channels')
-    os.makedirs(potential)
-    for img in img_list:
-        shutil.copy(os.path.join(base_dir, folder, img), os.path.join(potential, img))
-
-fovs = io_utils.list_folders(base_dir, 'Point')
-
-# copy selected membrane channel to membrane.tiff to make data loading easier
-for fov in fovs:
-    img_folder = os.path.join(base_dir, fov, 'segmentation_channels')
-    imgs = io_utils.list_files(img_folder, '.tif')
-    imgs.pop(np.where(np.isin(imgs, 'HH3.tif'))[0][0])
-
-    shutil.copy(os.path.join(img_folder, imgs[0]),
-                os.path.join(img_folder, 'membrane.tiff'))
-
-channel_data = data_utils.load_imgs_from_tree(base_dir, img_sub_folder='segmentation_channels',
-                                              channels=['HH3.tif', 'membrane.tiff'])
-
-channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
-
-# Since each point has different channels, we need to segment them one at a time
-segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
-
-
-core_df = pd.DataFrame()
-
-for fov in fovs:
-    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
-                                                  img_sub_folder='potential_channels')
-
-    current_labels = segmentation_labels.loc[[fov], :, :, :]
-
-    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
-        segmentation_labels=current_labels,
-        image_data=channel_data,
-        nuclear_counts=True
-    )
-    core_df = core_df.append(raw, sort=False)
-
-core_df.to_csv(os.path.join(base_dir, 'single_cell_data.csv'))
-
-# read in segmented data
-cell_counts = pd.read_csv(os.path.join(base_dir, 'single_cell_data.csv'))
-cell_counts = cell_counts.loc[cell_counts['cell_size_nuclear'] > 20, :]
-
-
-channels = ['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT', 'pS6']
-
-fig, ax = plt.subplots(2, 5, figsize=(30, 20))
-row_idx = 0
-for i in range(len(channels)):
-    chan_name = channels[i]
-    if i > 4:
-        row_idx = 1
-    col_idx = i % 5
-    channel_counts = cell_counts.loc[:, [chan_name, chan_name + '_nuclear']]
-    cutoff = np.percentile(cell_counts.values[cell_counts.values[:, 0] > 0, 0], [10])
-    channel_counts = channel_counts.loc[channel_counts[chan_name] > cutoff[0], :]
-
-    ratio = channel_counts.values[:, 1] / channel_counts.values[:, 0]
-
-    ax[row_idx, col_idx].hist(ratio, bins=np.arange(0, 1.01, 0.05))
-    avg = np.median(ratio)
-    ax[row_idx, col_idx].axvline(avg, color='red')
-    ax[row_idx, col_idx].set_title('Fraction nuc signal for {}'.format(chan_name))
-
-fig.savefig(os.path.join(base_dir, 'nuclear_fraction.pdf'))

@@ -13,7 +13,7 @@ from skimage.transform import resize
 from skimage.segmentation import find_boundaries
 from skimage.future import graph
 from datetime import datetime, timedelta
-
+from skimage.measure import regionprops_table
 
 from skimage.exposure import rescale_intensity
 from deepcell_toolbox.metrics import Metrics
@@ -115,29 +115,7 @@ def nuclear_expansion_watershed(label, membrane):
     return new_labels
 
 
-def get_paired_regionprops(true_labels, pred_labels, true_props_table, pred_props_table,
-                        field='eccentricity'):
 
-    true_field, pred_field = [], []
-
-    for pred_idx, pred_cell in enumerate(pred_props_table['label']):
-        pred_mask = pred_labels == pred_cell
-        overlap_ids, overlap_counts = np.unique(true_labels[pred_mask], return_counts=True)
-
-        # get ID of the true cell that overlaps with predicted cell most
-        max_overlap = np.max(overlap_counts)
-        max_idx = np.where(np.isin(overlap_counts, max_overlap))[0][0]
-        max_id = overlap_ids[max_idx]
-
-        # no matching cell
-        if max_id == 0:
-            pass
-        else:
-            true_row_idx = np.where(np.isin(true_props_table['label'], max_id))[0][0]
-            true_field.append(true_props_table[field][true_row_idx])
-            pred_field.append(pred_props_table[field][pred_idx])
-
-    return true_field, pred_field
 
 
 def preprocess_overlays(img_dir):
@@ -406,3 +384,72 @@ def calculate_annotator_time(job_report):
         total_time += difference.seconds
 
     return total_time
+
+
+def get_paired_regionprops(true_label, pred_label, true_props_table, pred_props_table,
+                        field='eccentricity'):
+
+    true_field, pred_field = [], []
+
+    for true_idx, true_cell in enumerate(true_props_table['label']):
+        true_mask = true_label == true_cell
+        overlap_ids, overlap_counts = np.unique(pred_label[true_mask], return_counts=True)
+
+        # get ID of the pred cell that overlaps with true cell most
+        max_overlap = np.max(overlap_counts)
+        max_idx = np.where(np.isin(overlap_counts, max_overlap))[0][0]
+        max_id = overlap_ids[max_idx]
+
+        # no matching cell
+        if max_id == 0:
+            true_field.append(true_props_table[field][true_idx])
+            pred_field.append(0)
+        else:
+            pred_row_idx = np.where(np.isin(pred_props_table['label'], max_id))[0][0]
+            pred_field.append(pred_props_table[field][pred_row_idx])
+            true_field.append(true_props_table[field][true_idx])
+
+    return true_field, pred_field
+
+
+def generate_morphology_metrics(true_labels, pred_labels, properties):
+    properties_df = pd.DataFrame()
+
+    for i in range(true_labels.shape[0]):
+        true_label = true_labels[i, :, :, 0]
+        pred_label = pred_labels[i, :, :, 0]
+
+        if np.max(true_label) == 0 or np.max(pred_label) == 0:
+            continue
+
+        true_props_table = regionprops_table(true_label, properties=properties)
+        pred_props_table = regionprops_table(pred_label, properties=properties)
+
+        properties_dict = {}
+        for prop in properties[1:]:
+            true_prop, pred_prop = get_paired_regionprops(true_label=true_label, pred_label=pred_label,
+                                                  true_props_table=true_props_table,
+                                                  pred_props_table=pred_props_table,
+                                                  field=prop)
+            properties_dict[prop + '_true'] = true_prop
+            properties_dict[prop + '_pred'] = pred_prop
+
+        properties_df = properties_df.append(pd.DataFrame(properties_dict))
+
+    return properties_df
+
+
+
+
+
+
+#
+#
+# x = np.arange(0, np.max(df[prop_name + '_true'].values))
+# ax[df_idx, i].plot(x, x, '-', color='red')
+# p_r, _ = pearsonr(true_vals, predicted_vals)
+# x_pos = np.max(true_vals) * 0.05
+# y_pos = np.max(predicted_vals) * 0.9
+# ax[df_idx, i].text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
+# ax.set_xlabel('True Value')
+# ax.set_ylabel('Predicted Value')
