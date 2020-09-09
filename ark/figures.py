@@ -17,6 +17,7 @@ from skimage.measure import regionprops_table
 
 from skimage.exposure import rescale_intensity
 from deepcell_toolbox.metrics import Metrics
+from scipy.stats import pearsonr
 
 
 from scipy.ndimage import gaussian_filter

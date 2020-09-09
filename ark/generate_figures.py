@@ -327,12 +327,12 @@ figures.plot_heatmap(vals=platform_array.values, x_labels=platform_types, y_labe
 
 # morphology comparisons
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
-true_dict = np.load(os.path.join(base_dir, '20200827_multiplex_COH_normalized_512x512_test.npz'))
+true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_no_resize_256x256.npz'))
 true_labels = true_dict['y'].astype('int16')
 tissue_list = true_dict['tissue_list']
 platform_list = true_dict['platform_list']
-nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuclear.npz'))['y']
-cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_whole_cell.npz'))['y']
+nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
+cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
 
 properties_df = pd.DataFrame()
 properties = ['label', 'area', 'major_axis_length', 'perimeter', 'minor_axis_length']
@@ -342,83 +342,88 @@ platform_idx = np.isin(platform_list, 'mibi')
 idx = gi_idx * platform_idx
 immune_idx = np.isin(tissue_list, 'immune')
 
-cell_prop_df = pd.DataFrame()
-for idx in range(cell_labels.shape[0]):
-    pred_label = cell_labels[idx, :, :, 0]
-    true_label = true_labels[idx, :, :, 0]
+cell_prop_df = compute_morphology_metrics(true_labels, cell_labels)
+nuc_prop_df = compute_morphology_metrics(true_labels, nuc_labels)
 
-    true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
-                                                     pred_label=pred_label)
-
-    true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
-    pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
-
-    paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
-                                           true_metrics=true_props_table,
-                                           pred_metrics=pred_props_table)
-
-    cell_prop_df = cell_prop_df.append(paired_df)
+cell_prop_df_cleaned = pd.DataFrame()
+for img in np.unique(cell_prop_df['img_num'].values):
+    current_df = cell_prop_df.loc[cell_prop_df['img_num'] == img]
+    nuc_df = nuc_prop_df.loc[np.logical_and(nuc_prop_df['img_num'] == img, nuc_prop_df['area_pred'] > 0)]
+    keep_idx = np.isin(current_df['label_true'].values, nuc_df['label_true'].values)
+    current_df = current_df.loc[keep_idx, :]
+    cell_prop_df_cleaned = cell_prop_df_cleaned.append(current_df)
 
 
-ratio = cell_prop_df['major_axis_length_true'].values / cell_prop_df['minor_axis_length_true'].values
-round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
-skew_idx = np.logical_or(ratio < 0.6, ratio > 1.5)
+def compute_morphology_metrics(true_labels, pred_labels):
+    prop_df = pd.DataFrame()
+    for idx in range(true_labels.shape[0]):
+        pred_label = pred_labels[idx, :, :, 0]
+        true_label = true_labels[idx, :, :, 0]
 
-cell_nonzero_idx = cell_prop_df['area_pred'] > 0
-nuc_nonzero_idx = nuc_prop_df['area_pred'] > 0
+        true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
+                                                         pred_label=pred_label)
 
-cell_idx = skew_idx * cell_nonzero_idx
-nuc_idx = skew_idx * nuc_nonzero_idx
+        true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
+        pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
 
-cell_prop_plot = cell_prop_df[cell_idx]
-true_size_cell, pred_size_cell = cell_prop_plot['area_true'].values, cell_prop_plot['area_pred'].values
+        paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
+                                               true_metrics=true_props_table,
+                                               pred_metrics=pred_props_table)
+        paired_df['img_num'] = idx
+        prop_df = prop_df.append(paired_df)
 
-nuc_prop_plot = nuc_prop_df[nuc_idx]
-true_size_nuc, pred_size_nuc = nuc_prop_plot['area_true'].values, nuc_prop_plot['area_pred'].values
+    return prop_df
+
+
+def get_skew_cells(input_df):
+    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
+    skew_idx = np.logical_or(ratio < 0.6, ratio > 1.5)
+    nonzero_idx = input_df['area_pred'] > 0
+    combined_idx = skew_idx * nonzero_idx
+
+    true_size = input_df['area_true'].values[combined_idx]
+    pred_size = input_df['area_pred'].values[combined_idx]
+
+    return true_size, pred_size
+
+
+def get_round_cells(input_df):
+    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
+    round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
+    nonzero_idx = input_df['area_pred'] > 0
+    combined_idx = round_idx * nonzero_idx
+
+    true_size = input_df['area_true'].values[combined_idx]
+    pred_size = input_df['area_pred'].values[combined_idx]
+
+    return true_size, pred_size
+
+
+def get_nonzero_cells(input_df):
+    nonzero_idx = input_df['area_pred'] > 0
+    true_size = input_df['area_true'].values[nonzero_idx]
+    pred_size = input_df['area_pred'].values[nonzero_idx]
+
+    return true_size, pred_size
+
+
+true_size_cell_skew, pred_size_cell_skew = get_skew_cells(cell_prop_df_cleaned)
+true_size_nuc_skew, pred_size_nuc_skew = get_skew_cells(nuc_prop_df)
+
+true_size_cell_round, pred_size_cell_round = get_round_cells(cell_prop_df_cleaned)
+true_size_nuc_round, pred_size_nuc_round = get_round_cells(nuc_prop_df)
+
+true_size_cell, pred_size_cell = get_nonzero_cells(cell_prop_df_cleaned)
+true_size_nuc, pred_size_nuc = get_nonzero_cells(nuc_prop_df)
 
 
 fig, ax = plt.subplots()
+figures.create_density_scatter(ax, true_size_nuc, pred_size_nuc)
+figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc)
+ax.set_title('Nuc Area Accuracy')
+ax.set_ylim(0, 6000)
 
-figures.create_density_scatter(ax, true_size_cell, pred_size_cell)
-figures.label_morphology_scatter(ax, true_size_cell, pred_size_cell)
-ax.set_title('Cell Area Accuracy')
-
-fig.savefig(os.path.join(base_dir, 'Cell_Area_skewed_scatter.pdf'))
-
-fig, ax = plt.subplots(2, 1, figsize=(15, 10))
-plot_props = properties[1:]
-for i in range(len(plot_props)):
-    for df_idx, df in enumerate([cell_prop_df.loc[round_idx], nuc_prop_df.loc[round_idx]]):
-        prop_name = plot_props[i]
-        true_vals = df[prop_name + '_true'].values
-        predicted_vals = df[prop_name + '_pred'].values
-
-        from scipy.stats import gaussian_kde
-
-        # Calculate the point density
-        xy = np.vstack([true_vals, predicted_vals])
-        z = gaussian_kde(xy)(xy)
-
-        # Sort the points by density, so that the densest points are plotted last
-        idx = z.argsort()
-        x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
-
-        #ax[row_idx, col_idx].scatter(x=true_vals, y=predicted_vals, alpha=0.01)
-        ax[df_idx, i].scatter(x, y, c=z, s=50, edgecolor='')
-
-        ax[df_idx, i].set_xlabel('True Value')
-        ax[df_idx, i].set_ylabel('Predicted Value')
-        ax[df_idx, i].set_title('Correlation of {}'.format(prop_name))
-
-
-        x = np.arange(0, np.max(df[prop_name + '_true'].values))
-        ax[df_idx, i].plot(x, x, '-', color='red')
-        p_r, _ = pearsonr(true_vals, predicted_vals)
-        x_pos = np.max(true_vals) * 0.05
-        y_pos = np.max(predicted_vals) * 0.9
-        ax[df_idx, i].text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
-
-fig.savefig(os.path.join(base_dir, 'morphology_correlation_nuc.png'))
+fig.savefig(os.path.join(base_dir, 'Nuc_Area_all_scatter.pdf'))
 
 
 # subcellular localization
@@ -592,23 +597,23 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
 nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
 cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
-true_dict = np.load(os.path.join(base_dir, '20200906_multiplex_test_no_resize_512x512.npz'))
+true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_no_resize_256x256.npz'))
 true_labels = true_dict['y'].astype('int16')
 tissue_list = true_dict['tissue_list']
 platform_list = true_dict['platform_list']
 
 combined_labels = xr.DataArray(np.concatenate((cell_labels, nuc_labels), axis=-1),
-                               coords=[range(nuc_labels.shape[0]), range(512), range(512),
+                               coords=[range(nuc_labels.shape[0]), range(256), range(256),
                                              ['whole_cell', 'nuclear']],
                                dims=['fovs', 'rows', 'cols', 'compartments'])
 
 blank_channel_data = xr.DataArray(np.full_like(cell_labels, 1),
-                                  coords=[range(cell_labels.shape[0]), range(512), range(512),
+                                  coords=[range(cell_labels.shape[0]), range(256), range(256),
                                           ['example_channel']],
                                   dims=['fovs', 'rows', 'cols', 'channels'])
 normalized, _, _ = marker_quantification.generate_expression_matrix(
-    segmentation_labels=combined_labels[:5],
-    image_data=blank_channel_data[:5],
+    segmentation_labels=combined_labels,
+    image_data=blank_channel_data,
     nuclear_counts=True)
 
 anuclear_fraction = []
@@ -617,6 +622,24 @@ for fov in np.unique(normalized['fov']):
     anucleated_count = np.sum(current_counts['area_nuclear'] == 0)
     total_count = len(current_counts)
     anuclear_fraction.append(anucleated_count/total_count)
+
+anuclear_df = pd.DataFrame({'anuclear_frac': anuclear_fraction, 'tissue': tissue_list})
+sums = anuclear_df.groupby('tissue')['anuclear_frac'].mean()
+
+# sort by decreasing nuclear counts
+anuclear_counts = sums.values
+anuclear_tissue = sums.index.values
+sort_idx = np.argsort(anuclear_counts)
+anuclear_counts, anuclear_tissue = anuclear_counts[sort_idx], anuclear_tissue[sort_idx]
+
+fig, ax = plt.subplots()
+width = 0.35
+ax.bar(anuclear_tissue, anuclear_counts, label='Nuclear Fraction')
+# Hide the right and top spines
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+ax.set_title('Fraction anuclear cells')
+fig.savefig(base_dir + 'anuclear_cell_count.pdf')
 
 # # cluster purity
 #
