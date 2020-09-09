@@ -385,31 +385,47 @@ def calculate_annotator_time(job_report):
 
     return total_time
 
+# TODO: switch this to return list of paired IDs. Then subsequent function takes list of paired IDs, indexes in regionprops table, and appends as appropriate
 
-def get_paired_regionprops(true_label, pred_label, true_props_table, pred_props_table,
-                        field='eccentricity'):
 
-    true_field, pred_field = [], []
+def get_paired_cell_ids(true_label, pred_label):
 
-    for true_idx, true_cell in enumerate(true_props_table['label']):
+    true_ids, pred_ids = [], []
+
+    for true_cell in np.unique(true_label[true_label > 0]):
         true_mask = true_label == true_cell
         overlap_ids, overlap_counts = np.unique(pred_label[true_mask], return_counts=True)
 
         # get ID of the pred cell that overlaps with true cell most
-        max_overlap = np.max(overlap_counts)
-        max_idx = np.where(np.isin(overlap_counts, max_overlap))[0][0]
-        max_id = overlap_ids[max_idx]
+        pred_id = overlap_ids[np.argmax(overlap_counts)]
 
-        # no matching cell
-        if max_id == 0:
-            true_field.append(true_props_table[field][true_idx])
-            pred_field.append(0)
+        true_ids.append(true_cell)
+        pred_ids.append(pred_id)
+
+    return true_ids, pred_ids
+
+
+def get_paired_metrics(true_ids, pred_ids, true_metrics, pred_metrics):
+    true_col_names = [name + '_true' for name in true_metrics.columns]
+    pred_col_names = [name + '_pred' for name in pred_metrics.columns]
+    col_names = true_col_names + pred_col_names
+
+    paired_df = pd.DataFrame()
+
+    for idx in range(len(true_ids)):
+        true_cell, pred_cell = true_ids[idx], pred_ids[idx]
+        true_vals = true_metrics.loc[true_metrics['label'] == true_cell].values[0]
+
+        if pred_cell == 0:
+            pred_vals = np.zeros_like(true_vals)
         else:
-            pred_row_idx = np.where(np.isin(pred_props_table['label'], max_id))[0][0]
-            pred_field.append(pred_props_table[field][pred_row_idx])
-            true_field.append(true_props_table[field][true_idx])
+            pred_vals = pred_metrics.loc[pred_metrics['label'] == pred_cell].values[0]
 
-    return true_field, pred_field
+        vals = np.append(true_vals, pred_vals)
+        current_df = pd.DataFrame(data=[vals], columns=col_names)
+        paired_df = paired_df.append(current_df)
+
+    return paired_df
 
 
 def generate_morphology_metrics(true_labels, pred_labels, properties):
@@ -439,7 +455,29 @@ def generate_morphology_metrics(true_labels, pred_labels, properties):
     return properties_df
 
 
+# create density scatter
+def create_density_scatter(ax, true_vals, predicted_vals):
+    from scipy.stats import gaussian_kde
 
+    # Calculate the point density
+    xy = np.vstack([true_vals, predicted_vals])
+    z = gaussian_kde(xy)(xy)
+
+    # Sort the points by density, so that the densest points are plotted last
+    idx = z.argsort()
+    x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
+    ax.scatter(x, y, c=z, s=50, edgecolor='')
+
+
+def label_morphology_scatter(ax, true_vals, pred_vals):
+    x = np.arange(0, np.max(true_vals))
+    ax.plot(x, x, '-', color='red')
+    p_r, _ = pearsonr(true_vals, pred_vals)
+    x_pos = np.max(true_vals) * 0.05
+    y_pos = np.max(pred_vals) * 0.9
+    ax.text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
+    ax.set_xlabel('True Value')
+    ax.set_ylabel('Predicted Value')
 
 
 

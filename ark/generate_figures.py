@@ -342,13 +342,23 @@ platform_idx = np.isin(platform_list, 'mibi')
 idx = gi_idx * platform_idx
 immune_idx = np.isin(tissue_list, 'immune')
 
-cell_prop_df = figures.generate_morphology_metrics(true_labels=true_labels,
-                                                   pred_labels=cell_labels,
-                                                   properties=properties)
+cell_prop_df = pd.DataFrame()
+for idx in range(cell_labels.shape[0]):
+    pred_label = cell_labels[idx, :, :, 0]
+    true_label = true_labels[idx, :, :, 0]
 
-nuc_prop_df = figures.generate_morphology_metrics(true_labels=true_labels,
-                                                  pred_labels=nuc_labels,
-                                                  properties=properties)
+    true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
+                                                     pred_label=pred_label)
+
+    true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
+    pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
+
+    paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
+                                           true_metrics=true_props_table,
+                                           pred_metrics=pred_props_table)
+
+    cell_prop_df = cell_prop_df.append(paired_df)
+
 
 ratio = cell_prop_df['major_axis_length_true'].values / cell_prop_df['minor_axis_length_true'].values
 round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
@@ -367,35 +377,10 @@ nuc_prop_plot = nuc_prop_df[nuc_idx]
 true_size_nuc, pred_size_nuc = nuc_prop_plot['area_true'].values, nuc_prop_plot['area_pred'].values
 
 
-# create density scatter
-def create_density_scatter(ax, true_vals, predicted_vals):
-    from scipy.stats import gaussian_kde
-
-    # Calculate the point density
-    xy = np.vstack([true_vals, predicted_vals])
-    z = gaussian_kde(xy)(xy)
-
-    # Sort the points by density, so that the densest points are plotted last
-    idx = z.argsort()
-    x, y, z = true_vals[idx], predicted_vals[idx], z[idx]
-    ax.scatter(x, y, c=z, s=50, edgecolor='')
-
-
-def label_morphology_scatter(ax, true_vals, pred_vals):
-    x = np.arange(0, np.max(true_vals))
-    ax.plot(x, x, '-', color='red')
-    p_r, _ = pearsonr(true_vals, pred_vals)
-    x_pos = np.max(true_vals) * 0.05
-    y_pos = np.max(pred_vals) * 0.9
-    ax.text(x_pos, y_pos, 'Pearson Correlation: {}'.format(np.round(p_r, 2)))
-    ax.set_xlabel('True Value')
-    ax.set_ylabel('Predicted Value')
-
-
 fig, ax = plt.subplots()
 
-create_density_scatter(ax, true_size_cell, pred_size_cell)
-label_morphology_scatter(ax, true_size_cell, pred_size_cell)
+figures.create_density_scatter(ax, true_size_cell, pred_size_cell)
+figures.label_morphology_scatter(ax, true_size_cell, pred_size_cell)
 ax.set_title('Cell Area Accuracy')
 
 fig.savefig(os.path.join(base_dir, 'Cell_Area_skewed_scatter.pdf'))
@@ -538,78 +523,173 @@ ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
 fig.savefig(base_dir + 'subcellular_barchart.pdf')
 
-# cluster purity
 
-datasets = ['TB_Data', 'TNBC_data']
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200809_cluster_purity/'
+# missing signal quantification
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
+fovs = io_utils.list_folders(base_dir, 'Point')
 
-for folder in datasets:
+# Since each point has different channels, we need to segment them one at a time
+segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
 
-    # cluster purity comparison
-    channel_data = data_utils.load_imgs_from_tree(os.path.join(base_dir, folder, 'channel_data'),
-                                                  dtype='float32')
+marker_counts_df = pd.DataFrame()
 
-    segmentation_labels = xr.open_dataarray(os.path.join(base_dir, folder, 'segmentation_labels.xr'))
-    segmentation_labels = segmentation_labels.loc[channel_data.fovs]
+for fov in fovs:
+    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+                                                  img_sub_folder='potential_channels')
 
-    normalized_counts, transformed_counts = segmentation_utils.generate_expression_matrix(segmentation_labels, channel_data)
+    current_labels = segmentation_labels.loc[[fov], :, :, :]
 
-    normalized_counts.to_csv(os.path.join(base_dir, folder, 'normalized_counts_cell.csv'))
-    transformed_counts.to_csv(os.path.join(base_dir, folder, 'transformed_counts_cell.csv'))
+    fov_counts = {}
+    for channel in channel_data.channels.values:
+        channel_img = channel_data.loc[fov, :, :, channel].values
+        total_counts = np.sum(channel_img)
+        cell_mask = current_labels.values[0, :, :, 0] > 0
+        cell_counts = np.sum(channel_img[cell_mask])
+        nuc_mask = current_labels.values[0, :, :, 1] > 0
+        nuc_counts = np.sum(channel_img[nuc_mask])
 
-    segmentation_labels_nuc = xr.open_dataarray(
-        os.path.join(base_dir, folder, 'segmentation_labels_nuc.xr'))
-
-    segmentation_labels_nuc = segmentation_labels_nuc.loc[channel_data.fovs]
-
-    segmentation_labels_nuc = xr.DataArray(segmentation_labels_nuc.values,
-                                           coords=[segmentation_labels_nuc.fovs,
-                                                   segmentation_labels_nuc.rows,
-                                                   segmentation_labels_nuc.cols,
-                                                   ['whole_cell']],
-                                           dims=segmentation_labels_nuc.dims)
-
-    normalized_counts_nuc, transformed_counts_nuc = segmentation_utils.generate_expression_matrix(
-        segmentation_labels_nuc, channel_data)
-
-    normalized_counts_nuc.to_csv(os.path.join(base_dir, folder, 'normalized_counts_nuc.csv'))
-    transformed_counts_nuc.to_csv(os.path.join(base_dir, folder, 'transformed_counts_nuc.csv'))
+        fov_counts[channel + '_total'] = total_counts
+        fov_counts[channel + '_cell'] = cell_counts
+        fov_counts[channel + '_nuc'] = nuc_counts
 
 
-tnbc_cell = pd.read_csv(os.path.join(base_dir, 'TNBC_data', 'normalized_counts_cell.csv'))
-tnbc_nuc = pd.read_csv(os.path.join(base_dir, 'TNBC_data', 'normalized_counts_nuc.csv'))
+    marker_counts_df = marker_counts_df.append(pd.DataFrame(fov_counts, index=[fov]))
+
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4/'
+marker_counts_df.to_csv(os.path.join(base_dir, 'total_counts_by_mask.csv'))
+
+marker_counts_df = pd.read_csv(os.path.join(base_dir, 'total_counts_by_mask.csv'))
+
+summed_counts = marker_counts_df.sum(axis=0)
+
+channels = np.array(['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT', 'pS6'])
+
+nuclear_fraction = []
+for chan in channels:
+    cell_frac = summed_counts[chan + '_total']
+    nuc_frac = summed_counts[chan + '_nuc']
+    frac = nuc_frac / cell_frac
+    nuclear_fraction.append(frac)
 
 
-for label in segmentation_labels.fovs.values:
-    mask = segmentation_labels.loc[label, :, :, 'whole_cell']
-    io.imsave(os.path.join(base_dir, 'TNBC_data/channel_data', label, 'segmentation_label_cell.tiff'),
-              mask.astype('int16'))
+# sort by decreasing nuc fraction
+sort_idx = np.argsort([-item for item in nuclear_fraction])
+channels, nuclear_fraction = channels[sort_idx], np.array(nuclear_fraction)[sort_idx]
+
+fig, ax = plt.subplots()
+width = 0.35
+ax.bar(channels, nuclear_fraction, label='Nuclear Fraction')
+# Hide the right and top spines
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+fig.savefig(base_dir + 'missed_signal.pdf')
+
+# on a per-cell basis:
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
 
 
-for label in segmentation_labels_nuc.fovs.values:
-    mask = segmentation_labels_nuc.loc[label, :, :, 'whole_cell']
-    io.imsave(os.path.join(base_dir, 'TNBC_data/channel_data', label, 'segmentation_label_nuc.tiff'),
-              mask.astype('int16'))
+# Number of cells without a nucleus across tissue types
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
+nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
+cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
+true_dict = np.load(os.path.join(base_dir, '20200906_multiplex_test_no_resize_512x512.npz'))
+true_labels = true_dict['y'].astype('int16')
+tissue_list = true_dict['tissue_list']
+platform_list = true_dict['platform_list']
 
+combined_labels = xr.DataArray(np.concatenate((cell_labels, nuc_labels), axis=-1),
+                               coords=[range(nuc_labels.shape[0]), range(512), range(512),
+                                             ['whole_cell', 'nuclear']],
+                               dims=['fovs', 'rows', 'cols', 'compartments'])
 
-fig, axes = plt.subplots(2, 1, figsize=(15, 15))
-axes[0].scatter(tnbc_nuc['CD45'].values, tnbc_nuc['Beta catenin'].values)
-axes[1].scatter(tnbc_cell['CD45'].values, tnbc_cell['Beta catenin'].values)
+blank_channel_data = xr.DataArray(np.full_like(cell_labels, 1),
+                                  coords=[range(cell_labels.shape[0]), range(512), range(512),
+                                          ['example_channel']],
+                                  dims=['fovs', 'rows', 'cols', 'channels'])
+normalized, _, _ = marker_quantification.generate_expression_matrix(
+    segmentation_labels=combined_labels[:5],
+    image_data=blank_channel_data[:5],
+    nuclear_counts=True)
 
-axes[0].set_xlabel('CD45')
-axes[1].set_xlabel('CD45')
-axes[1].set_title('Whole cell segmentation')
-axes[0].set_ylabel('Beta Catenin')
-axes[1].set_ylabel('Beta Catenin')
-axes[0].set_title('Nuclear segmentation')
+anuclear_fraction = []
+for fov in np.unique(normalized['fov']):
+    current_counts = normalized.loc[normalized['fov'] == fov]
+    anucleated_count = np.sum(current_counts['area_nuclear'] == 0)
+    total_count = len(current_counts)
+    anuclear_fraction.append(anucleated_count/total_count)
 
-
-panc_cell = pd.read_csv(os.path.join(base_dir, 'Panc_data', 'normalized_counts_cell.csv'))
-panc_nuc = pd.read_csv(os.path.join(base_dir, 'Panc_data', 'normalized_counts_nuc.csv'))
-
-
-plt.scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
-
-fig, ax = plt.subplots(2, 1)
-ax[0].scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
-ax[1].scatter(panc_cell['Glucagon'].values, panc_cell['Proinsulin'].values)
+# # cluster purity
+#
+# datasets = ['TB_Data', 'TNBC_data']
+# base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200809_cluster_purity/'
+#
+# for folder in datasets:
+#
+#     # cluster purity comparison
+#     channel_data = data_utils.load_imgs_from_tree(os.path.join(base_dir, folder, 'channel_data'),
+#                                                   dtype='float32')
+#
+#     segmentation_labels = xr.open_dataarray(os.path.join(base_dir, folder, 'segmentation_labels.xr'))
+#     segmentation_labels = segmentation_labels.loc[channel_data.fovs]
+#
+#     normalized_counts, transformed_counts = segmentation_utils.generate_expression_matrix(segmentation_labels, channel_data)
+#
+#     normalized_counts.to_csv(os.path.join(base_dir, folder, 'normalized_counts_cell.csv'))
+#     transformed_counts.to_csv(os.path.join(base_dir, folder, 'transformed_counts_cell.csv'))
+#
+#     segmentation_labels_nuc = xr.open_dataarray(
+#         os.path.join(base_dir, folder, 'segmentation_labels_nuc.xr'))
+#
+#     segmentation_labels_nuc = segmentation_labels_nuc.loc[channel_data.fovs]
+#
+#     segmentation_labels_nuc = xr.DataArray(segmentation_labels_nuc.values,
+#                                            coords=[segmentation_labels_nuc.fovs,
+#                                                    segmentation_labels_nuc.rows,
+#                                                    segmentation_labels_nuc.cols,
+#                                                    ['whole_cell']],
+#                                            dims=segmentation_labels_nuc.dims)
+#
+#     normalized_counts_nuc, transformed_counts_nuc = segmentation_utils.generate_expression_matrix(
+#         segmentation_labels_nuc, channel_data)
+#
+#     normalized_counts_nuc.to_csv(os.path.join(base_dir, folder, 'normalized_counts_nuc.csv'))
+#     transformed_counts_nuc.to_csv(os.path.join(base_dir, folder, 'transformed_counts_nuc.csv'))
+#
+#
+# tnbc_cell = pd.read_csv(os.path.join(base_dir, 'TNBC_data', 'normalized_counts_cell.csv'))
+# tnbc_nuc = pd.read_csv(os.path.join(base_dir, 'TNBC_data', 'normalized_counts_nuc.csv'))
+#
+#
+# for label in segmentation_labels.fovs.values:
+#     mask = segmentation_labels.loc[label, :, :, 'whole_cell']
+#     io.imsave(os.path.join(base_dir, 'TNBC_data/channel_data', label, 'segmentation_label_cell.tiff'),
+#               mask.astype('int16'))
+#
+#
+# for label in segmentation_labels_nuc.fovs.values:
+#     mask = segmentation_labels_nuc.loc[label, :, :, 'whole_cell']
+#     io.imsave(os.path.join(base_dir, 'TNBC_data/channel_data', label, 'segmentation_label_nuc.tiff'),
+#               mask.astype('int16'))
+#
+#
+# fig, axes = plt.subplots(2, 1, figsize=(15, 15))
+# axes[0].scatter(tnbc_nuc['CD45'].values, tnbc_nuc['Beta catenin'].values)
+# axes[1].scatter(tnbc_cell['CD45'].values, tnbc_cell['Beta catenin'].values)
+#
+# axes[0].set_xlabel('CD45')
+# axes[1].set_xlabel('CD45')
+# axes[1].set_title('Whole cell segmentation')
+# axes[0].set_ylabel('Beta Catenin')
+# axes[1].set_ylabel('Beta Catenin')
+# axes[0].set_title('Nuclear segmentation')
+#
+#
+# panc_cell = pd.read_csv(os.path.join(base_dir, 'Panc_data', 'normalized_counts_cell.csv'))
+# panc_nuc = pd.read_csv(os.path.join(base_dir, 'Panc_data', 'normalized_counts_nuc.csv'))
+#
+#
+# plt.scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
+#
+# fig, ax = plt.subplots(2, 1)
+# ax[0].scatter(panc_nuc['Glucagon'].values, panc_nuc['Proinsulin'].values)
+# ax[1].scatter(panc_cell['Glucagon'].values, panc_cell['Proinsulin'].values)
