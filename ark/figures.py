@@ -415,16 +415,19 @@ def get_paired_metrics(true_ids, pred_ids, true_metrics, pred_metrics):
 
     for idx in range(len(true_ids)):
         true_cell, pred_cell = true_ids[idx], pred_ids[idx]
-        true_vals = true_metrics.loc[true_metrics['label'] == true_cell].values[0]
 
-        if pred_cell == 0:
-            pred_vals = np.zeros_like(true_vals)
-        else:
-            pred_vals = pred_metrics.loc[pred_metrics['label'] == pred_cell].values[0]
+        try:
+            true_vals = true_metrics.loc[true_metrics['label'] == true_cell].values[0]
+            if pred_cell == 0:
+                pred_vals = np.zeros_like(true_vals)
+            else:
+                pred_vals = pred_metrics.loc[pred_metrics['label'] == pred_cell].values[0]
 
-        vals = np.append(true_vals, pred_vals)
-        current_df = pd.DataFrame(data=[vals], columns=col_names)
-        paired_df = paired_df.append(current_df)
+            vals = np.append(true_vals, pred_vals)
+            current_df = pd.DataFrame(data=[vals], columns=col_names)
+            paired_df = paired_df.append(current_df)
+        except:
+            print('true_metrics label is {}'.format(true_cell))
 
     return paired_df
 

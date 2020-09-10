@@ -425,11 +425,76 @@ ax.set_ylim(0, 6000)
 
 fig.savefig(os.path.join(base_dir, 'Nuc_Area_all_scatter.pdf'))
 
+# N/C ratio
+roshan_idx = np.logical_and(tissue_list == 'gi', platform_list == 'mibi')
+# take first 5 images, curate nuclear annotations
+roshan_cell_true = true_labels[roshan_idx]
+roshan_cell_pred = cell_labels[roshan_idx]
+roshan_nuc_pred = nuc_labels[roshan_idx]
+channel_data = true_dict['X'][roshan_idx]
 
-# subcellular localization
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
-all_imgs = data_utils.load_imgs_from_tree(data_dir=base_dir)
-stitched_imgs = data_utils.stitch_images(all_imgs, 5)
+for i in range(5):
+    X = channel_data[[i], ...]
+    y = np.zeros((1, 256, 256, 1))
+    np.savez_compressed(os.path.join(base_dir, 'curated_nuc', 'example_fov_{}.npz'.format(i)),
+                                     X=X, y=y)
+
+roshan_nuc_true = np.zeros_like(roshan_nuc_pred)
+for i in range(5):
+    current_npz = np.load(os.path.join(base_dir, 'curated_nuc',
+                                       'example_fov_{}_save_version_0.npz'.format(i)))
+    labels = current_npz['y']
+    roshan_nuc_true[i, ...] = labels[0, ...]
+
+
+def generate_segmented_data(labels_tuple):
+    # segment data
+    label_xr = xr.DataArray(np.concatenate(labels_tuple, axis=-1),
+                            coords=[range(labels_tuple[0].shape[0]), range(256), range(256),
+                                    ['whole_cell', 'nuclear']],
+                            dims=['fovs', 'rows', 'cols', 'compartments'])
+
+    channel_xr = xr.DataArray(np.full_like(labels_tuple[0], 1),
+                              coords=[range(labels_tuple[0].shape[0]),
+                                      range(256), range(256),
+                                      ['example_channel']],
+                              dims=['fovs', 'rows', 'cols', 'channels'])
+    normalized, _, _ = marker_quantification.generate_expression_matrix(
+        segmentation_labels=label_xr,
+        image_data=channel_xr,
+        nuclear_counts=True)
+
+    return normalized
+
+
+nc_df = pd.DataFrame()
+for i in range(5):
+    true_marker_counts = generate_segmented_data((roshan_cell_true[[i]], roshan_nuc_true[[i]]))
+    pred_marker_counts = generate_segmented_data((roshan_cell_pred[[i]], roshan_nuc_pred[[i]]))
+
+    true_nc = true_marker_counts['area_nuclear'] / true_marker_counts['area']
+    true_label = true_marker_counts['label']
+
+    pred_nc = pred_marker_counts['area_nuclear'] / pred_marker_counts['area']
+    pred_label = pred_marker_counts['label']
+
+    true_df = pd.DataFrame({'label': true_label, 'nc_ratio': true_nc})
+    pred_df = pd.DataFrame({'label': pred_label, 'nc_ratio': pred_nc})
+
+    true_ids, pred_ids = figures.get_paired_cell_ids(true_label=roshan_cell_true[i, :, :, 0],
+                                                     pred_label=roshan_cell_pred[i, :, :, 0])
+
+    paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
+                                           true_metrics=true_df,
+                                           pred_metrics=pred_df)
+
+    nc_df = nc_df.append(paired_df)
+
+fig, ax = plt.subplots()
+figures.create_density_scatter(ax, nc_df['nc_ratio_true'].values, nc_df['nc_ratio_pred'].values)
+figures.label_morphology_scatter(ax, nc_df['nc_ratio_true'].values, nc_df['nc_ratio_pred'].values)
+ax.set_title('NC Ratio Accuracy')
+fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy.pdf'))
 
 # move potential images
 img_list = ['CD44.tif', 'COX2.tif', 'ECAD.tif', 'GLUT1.tif', 'HER2.tif', 'HH3.tif',

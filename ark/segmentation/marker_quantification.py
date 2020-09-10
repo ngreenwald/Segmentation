@@ -27,7 +27,7 @@ def compute_marker_counts(input_images, segmentation_masks, nuclear_counts=False
 
     # define morphology properties to be extracted from regionprops
     object_properties = ["label", "area", "eccentricity", "major_axis_length",
-                         "minor_axis_length", "perimeter", 'coords', 'centroid']
+                         "minor_axis_length", "perimeter", 'coords']
 
     # create labels for array holding channel counts and morphology metrics
     feature_names = np.concatenate((np.array('cell_size'), input_images.channels,
