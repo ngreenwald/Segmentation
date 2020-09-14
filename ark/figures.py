@@ -485,6 +485,62 @@ def label_morphology_scatter(ax, true_vals, pred_vals):
 
 
 
+def compute_morphology_metrics(true_labels, pred_labels, properties=None):
+    if properties is None:
+        properties = ['label', 'area', 'major_axis_length', 'minor_axis_length']
+
+    prop_df = pd.DataFrame()
+    for idx in range(true_labels.shape[0]):
+        pred_label = pred_labels[idx, :, :, 0]
+        true_label = true_labels[idx, :, :, 0]
+
+        true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
+                                                         pred_label=pred_label)
+
+        true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
+        pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
+
+        paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
+                                               true_metrics=true_props_table,
+                                               pred_metrics=pred_props_table)
+        paired_df['img_num'] = idx
+        prop_df = prop_df.append(paired_df)
+
+    return prop_df
+
+
+def get_skew_cells(input_df):
+    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
+    skew_idx = np.logical_or(ratio < 0.6, ratio > 1.5)
+    nonzero_idx = input_df['area_pred'] > 0
+    combined_idx = skew_idx * nonzero_idx
+
+    true_size = input_df['area_true'].values[combined_idx]
+    pred_size = input_df['area_pred'].values[combined_idx]
+
+    return true_size, pred_size
+
+
+def get_round_cells(input_df):
+    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
+    round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
+    nonzero_idx = input_df['area_pred'] > 0
+    combined_idx = round_idx * nonzero_idx
+
+    true_size = input_df['area_true'].values[combined_idx]
+    pred_size = input_df['area_pred'].values[combined_idx]
+
+    return true_size, pred_size
+
+
+def get_nonzero_cells(input_df):
+    nonzero_idx = input_df['area_pred'] > 0
+    true_size = input_df['area_true'].values[nonzero_idx]
+    pred_size = input_df['area_pred'].values[nonzero_idx]
+
+    return true_size, pred_size
+
+
 #
 #
 # x = np.arange(0, np.max(df[prop_name + '_true'].values))

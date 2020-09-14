@@ -327,8 +327,9 @@ figures.plot_heatmap(vals=platform_array.values, x_labels=platform_types, y_labe
 
 # morphology comparisons
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
-true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_no_resize_256x256.npz'))
+true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_256x256.npz'))
 true_labels = true_dict['y'].astype('int16')
+true_labels = true_labels[:660]
 tissue_list = true_dict['tissue_list']
 platform_list = true_dict['platform_list']
 nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
@@ -342,8 +343,8 @@ platform_idx = np.isin(platform_list, 'mibi')
 idx = gi_idx * platform_idx
 immune_idx = np.isin(tissue_list, 'immune')
 
-cell_prop_df = compute_morphology_metrics(true_labels, cell_labels)
-nuc_prop_df = compute_morphology_metrics(true_labels, nuc_labels)
+cell_prop_df = figures.compute_morphology_metrics(true_labels, cell_labels)
+nuc_prop_df = figures.compute_morphology_metrics(true_labels, nuc_labels)
 
 cell_prop_df_cleaned = pd.DataFrame()
 for img in np.unique(cell_prop_df['img_num'].values):
@@ -354,76 +355,35 @@ for img in np.unique(cell_prop_df['img_num'].values):
     cell_prop_df_cleaned = cell_prop_df_cleaned.append(current_df)
 
 
-def compute_morphology_metrics(true_labels, pred_labels):
-    prop_df = pd.DataFrame()
-    for idx in range(true_labels.shape[0]):
-        pred_label = pred_labels[idx, :, :, 0]
-        true_label = true_labels[idx, :, :, 0]
 
-        true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
-                                                         pred_label=pred_label)
+true_size_cell_skew, pred_size_cell_skew = figures.get_skew_cells(cell_prop_df_cleaned)
+true_size_nuc_skew, pred_size_nuc_skew = figures.get_skew_cells(nuc_prop_df)
 
-        true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
-        pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
+true_size_cell_round, pred_size_cell_round = figures.get_round_cells(cell_prop_df_cleaned)
+true_size_nuc_round, pred_size_nuc_round = figures.get_round_cells(nuc_prop_df)
 
-        paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
-                                               true_metrics=true_props_table,
-                                               pred_metrics=pred_props_table)
-        paired_df['img_num'] = idx
-        prop_df = prop_df.append(paired_df)
+true_size_cell, pred_size_cell = figures.get_nonzero_cells(cell_prop_df_cleaned)
+true_size_nuc, pred_size_nuc = figures.get_nonzero_cells(nuc_prop_df)
 
-    return prop_df
-
-
-def get_skew_cells(input_df):
-    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
-    skew_idx = np.logical_or(ratio < 0.6, ratio > 1.5)
-    nonzero_idx = input_df['area_pred'] > 0
-    combined_idx = skew_idx * nonzero_idx
-
-    true_size = input_df['area_true'].values[combined_idx]
-    pred_size = input_df['area_pred'].values[combined_idx]
-
-    return true_size, pred_size
-
-
-def get_round_cells(input_df):
-    ratio = input_df['major_axis_length_true'].values / input_df['minor_axis_length_true'].values
-    round_idx = np.logical_and(ratio > 0.8, ratio < 1.2)
-    nonzero_idx = input_df['area_pred'] > 0
-    combined_idx = round_idx * nonzero_idx
-
-    true_size = input_df['area_true'].values[combined_idx]
-    pred_size = input_df['area_pred'].values[combined_idx]
-
-    return true_size, pred_size
-
-
-def get_nonzero_cells(input_df):
-    nonzero_idx = input_df['area_pred'] > 0
-    true_size = input_df['area_true'].values[nonzero_idx]
-    pred_size = input_df['area_pred'].values[nonzero_idx]
-
-    return true_size, pred_size
-
-
-true_size_cell_skew, pred_size_cell_skew = get_skew_cells(cell_prop_df_cleaned)
-true_size_nuc_skew, pred_size_nuc_skew = get_skew_cells(nuc_prop_df)
-
-true_size_cell_round, pred_size_cell_round = get_round_cells(cell_prop_df_cleaned)
-true_size_nuc_round, pred_size_nuc_round = get_round_cells(nuc_prop_df)
-
-true_size_cell, pred_size_cell = get_nonzero_cells(cell_prop_df_cleaned)
-true_size_nuc, pred_size_nuc = get_nonzero_cells(nuc_prop_df)
-
+pred_size_nuc_log2 = np.log2(pred_size_nuc / true_size_nuc)
+pred_size_cell_log2 = np.log2(pred_size_cell / true_size_cell)
 
 fig, ax = plt.subplots()
-figures.create_density_scatter(ax, true_size_nuc, pred_size_nuc)
-figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc)
-ax.set_title('Nuc Area Accuracy')
-ax.set_ylim(0, 6000)
+figures.create_density_scatter(ax, true_size_cell, pred_size_cell_log2)
+#figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc_log2)
+ax.set_title('Cell segmentation area accuracy')
+#ax.set_ylim(0, 6000)
 
-fig.savefig(os.path.join(base_dir, 'Nuc_Area_all_scatter.pdf'))
+fig.savefig(os.path.join(base_dir, 'Cell_Segmentation_Area_Accuracy.jpg'))
+
+# nuc accuracy
+fig, ax = plt.subplots()
+figures.create_density_scatter(ax, true_size_nuc, pred_size_nuc_log2)
+#figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc_log2)
+ax.set_title('Nuclear segmentation area accuracy')
+#ax.set_ylim(0, 6000)
+
+fig.savefig(os.path.join(base_dir, 'Nuc_Segmentation_Area_Accuracy.jpg'))
 
 # N/C ratio
 roshan_idx = np.logical_and(tissue_list == 'gi', platform_list == 'mibi')
@@ -525,7 +485,7 @@ channel_data = data_utils.load_imgs_from_tree(base_dir, img_sub_folder='segmenta
 channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
 
 # Since each point has different channels, we need to segment them one at a time
-segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
+segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels_combined.xr')
 
 core_df = pd.DataFrame()
 
@@ -599,8 +559,9 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 fovs = io_utils.list_folders(base_dir, 'Point')
 
 # Since each point has different channels, we need to segment them one at a time
-segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels.xr')
-
+segmentation_labels_cell = xr.open_dataarray(base_dir + '/segmentation_labels_combined.xr')
+segmentation_labels_expanded = xr.open_dataarray(base_dir + '/segmentation_labels_nuc_expansion.xr')
+segmentation_labels_cell[..., 1] - segmentation_labels_expanded
 marker_counts_df = pd.DataFrame()
 
 for fov in fovs:
@@ -657,6 +618,54 @@ fig.savefig(base_dir + 'missed_signal.pdf')
 # on a per-cell basis:
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
 
+segmentation_labels_cell = xr.open_dataarray(base_dir + '/segmentation_labels_combined.xr')
+segmentation_labels_expanded = xr.open_dataarray(base_dir + '/segmentation_labels_nuc_expansion.xr')
+segmentation_labels_cell[..., 1] = segmentation_labels_expanded[..., 0]
+marker_counts_df = pd.DataFrame()
+
+for fov in fovs:
+    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+                                                  img_sub_folder='potential_channels')
+
+    current_labels = segmentation_labels_cell.loc[[fov], :, :, :]
+
+    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
+        segmentation_labels=current_labels,
+        image_data=channel_data,
+        nuclear_counts=True
+    )
+    marker_counts_df = marker_counts_df.append(raw, sort=False)
+
+marker_counts_df.to_csv(os.path.join(base_dir, 'signal_extraction_comparison.csv'))
+
+marker_counts_df = pd.read_csv(os.path.join(base_dir, 'signal_extraction_comparison.csv'))
+
+# remove cells without a predicted nucleus
+marker_counts_df = marker_counts_df.loc[marker_counts_df['area_nuclear'] > 0, :]
+
+# create plotting df
+plotting_df = pd.DataFrame()
+for chan in channels:
+    # compute ratio of cell to nuclear values
+    ratio = marker_counts_df[chan].values / marker_counts_df[chan + '_nuclear'].values
+
+    # cells without nuclear counts (divide by zero) become ratio of 10
+    ratio[marker_counts_df[chan + '_nuclear'] == 0] = 10
+
+    # only keep cells that are in top 90% for marker expression
+    cell_counts = marker_counts_df[chan].values
+    cutoff = np.percentile(cell_counts[cell_counts > 0], [10])
+    idx = cell_counts > cutoff[0]
+
+    ratio = ratio[idx]
+
+    # cap maximum at 10
+    ratio[ratio > 10] = 10
+    current_df = pd.DataFrame({'marker': chan, 'ratio': ratio})
+    plotting_df = plotting_df.append(current_df)
+
+sns.boxplot(x='marker', y='ratio', data=plotting_df)
+plt.savefig(os.path.join(base_dir, 'signal_extraction_proportion.jpg'))
 
 # Number of cells without a nucleus across tissue types
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
