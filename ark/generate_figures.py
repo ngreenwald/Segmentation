@@ -330,8 +330,8 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_256x256.npz'))
 true_labels = true_dict['y'].astype('int16')
 true_labels = true_labels[:660]
-tissue_list = true_dict['tissue_list']
-platform_list = true_dict['platform_list']
+tissue_list = true_dict['tissue_list'][:660]
+platform_list = true_dict['platform_list'][:660]
 nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
 cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
 
@@ -391,7 +391,7 @@ roshan_idx = np.logical_and(tissue_list == 'gi', platform_list == 'mibi')
 roshan_cell_true = true_labels[roshan_idx]
 roshan_cell_pred = cell_labels[roshan_idx]
 roshan_nuc_pred = nuc_labels[roshan_idx]
-channel_data = true_dict['X'][roshan_idx]
+channel_data = true_dict['X'][:660][roshan_idx]
 
 for i in range(5):
     X = channel_data[[i], ...]
@@ -427,6 +427,13 @@ def generate_segmented_data(labels_tuple):
     return normalized
 
 
+def calc_nuc_dist(cell_centroids, nuc_centroids):
+    x1s, y1s = cell_centroids
+    x2s, y2s = nuc_centroids
+    dist = np.sqrt((x2s - x1s) ** 2 + (y2s - y1s) ** 2)
+    return dist
+
+
 nc_df = pd.DataFrame()
 for i in range(5):
     true_marker_counts = generate_segmented_data((roshan_cell_true[[i]], roshan_nuc_true[[i]]))
@@ -438,8 +445,23 @@ for i in range(5):
     pred_nc = pred_marker_counts['area_nuclear'] / pred_marker_counts['area']
     pred_label = pred_marker_counts['label']
 
-    true_df = pd.DataFrame({'label': true_label, 'nc_ratio': true_nc})
-    pred_df = pd.DataFrame({'label': pred_label, 'nc_ratio': pred_nc})
+    pred_skew = calc_nuc_dist((pred_marker_counts['centroid-0'].values,
+                               pred_marker_counts['centroid-1'].values),
+                              (pred_marker_counts['centroid-0_nuclear'].values,
+                               pred_marker_counts['centroid-1_nuclear'].values)
+                              )
+    pred_skew /= pred_marker_counts['major_axis_length'].values
+
+    true_skew = calc_nuc_dist((true_marker_counts['centroid-0'].values,
+                               true_marker_counts['centroid-1'].values),
+                              (true_marker_counts['centroid-0_nuclear'].values,
+                               true_marker_counts['centroid-1_nuclear'].values)
+                              )
+    true_skew /= true_marker_counts['major_axis_length'].values
+
+
+    true_df = pd.DataFrame({'label': true_label, 'nc_ratio': true_nc, 'nuc_skew': true_skew})
+    pred_df = pd.DataFrame({'label': pred_label, 'nc_ratio': pred_nc, 'nuc_skew': pred_skew})
 
     true_ids, pred_ids = figures.get_paired_cell_ids(true_label=roshan_cell_true[i, :, :, 0],
                                                      pred_label=roshan_cell_pred[i, :, :, 0])
@@ -447,14 +469,28 @@ for i in range(5):
     paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
                                            true_metrics=true_df,
                                            pred_metrics=pred_df)
+    paired_df['fov'] = i
 
     nc_df = nc_df.append(paired_df)
 
+# NC ratio
+nc_df_plot = copy.copy(nc_df)
+nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 1, 'nc_ratio_pred'] = 1
+nc_df_plot = nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 0, :]
+
+
 fig, ax = plt.subplots()
-figures.create_density_scatter(ax, nc_df['nc_ratio_true'].values, nc_df['nc_ratio_pred'].values)
-figures.label_morphology_scatter(ax, nc_df['nc_ratio_true'].values, nc_df['nc_ratio_pred'].values)
+figures.create_density_scatter(ax, nc_df_plot['nc_ratio_true'].values, nc_df_plot['nc_ratio_pred'].values)
+figures.label_morphology_scatter(ax, nc_df_plot['nc_ratio_true'].values, nc_df_plot['nc_ratio_pred'].values)
 ax.set_title('NC Ratio Accuracy')
 fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy.pdf'))
+
+
+# nuclear skew
+fig, ax = plt.subplots()
+figures.create_density_scatter(ax, nc_df['nuc_skew_true'].values, nc_df['nuc_skew_pred'].values)
+ax.set_title('Nuc Skew Accuracy')
+fig.savefig(os.path.join(base_dir, 'Nuc_skew_accuracy.pdf'))
 
 # move potential images
 img_list = ['CD44.tif', 'COX2.tif', 'ECAD.tif', 'GLUT1.tif', 'HER2.tif', 'HH3.tif',
@@ -671,10 +707,10 @@ plt.savefig(os.path.join(base_dir, 'signal_extraction_proportion.jpg'))
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'
 nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
 cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
-true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_no_resize_256x256.npz'))
-true_labels = true_dict['y'].astype('int16')
-tissue_list = true_dict['tissue_list']
-platform_list = true_dict['platform_list']
+true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_256x256.npz'))
+true_labels = true_dict['y'].astype('int16')[:660]
+tissue_list = true_dict['tissue_list'][:660]
+platform_list = true_dict['platform_list'][:660]
 
 combined_labels = xr.DataArray(np.concatenate((cell_labels, nuc_labels), axis=-1),
                                coords=[range(nuc_labels.shape[0]), range(256), range(256),
@@ -713,7 +749,7 @@ ax.bar(anuclear_tissue, anuclear_counts, label='Nuclear Fraction')
 ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
 ax.set_title('Fraction anuclear cells')
-fig.savefig(base_dir + 'anuclear_cell_count.pdf')
+fig.savefig(base_dir + '/anuclear_cell_count.pdf')
 
 # # cluster purity
 #
