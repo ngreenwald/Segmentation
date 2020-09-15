@@ -478,6 +478,10 @@ nc_df_plot = copy.copy(nc_df)
 nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 1, 'nc_ratio_pred'] = 1
 nc_df_plot = nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 0, :]
 
+skew_df = copy.copy(nc_df)
+skew_df = skew_df.loc[skew_df['nc_ratio_true'] > 0, :]
+skew_df = skew_df.loc[skew_df['nc_ratio_pred'] > 0, :]
+
 
 fig, ax = plt.subplots()
 figures.create_density_scatter(ax, nc_df_plot['nc_ratio_true'].values, nc_df_plot['nc_ratio_pred'].values)
@@ -488,7 +492,7 @@ fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy.pdf'))
 
 # nuclear skew
 fig, ax = plt.subplots()
-figures.create_density_scatter(ax, nc_df['nuc_skew_true'].values, nc_df['nuc_skew_pred'].values)
+figures.create_density_scatter(ax, skew_df['nuc_skew_true'].values, skew_df['nuc_skew_pred'].values)
 ax.set_title('Nuc Skew Accuracy')
 fig.savefig(os.path.join(base_dir, 'Nuc_skew_accuracy.pdf'))
 
