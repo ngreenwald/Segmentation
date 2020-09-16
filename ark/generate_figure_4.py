@@ -59,72 +59,33 @@ nuc_expansion_prop_df.columns = new_col_names
 
 combined = pd.concat((cell_prop_df, nuc_expansion_prop_df), axis=1)
 
-
-true_size_cell, pred_size_cell = figures.get_nonzero_cells(cell_prop_df_cleaned)
-true_size_nuc, pred_size_nuc = figures.get_nonzero_cells(nuc_expansion_prop_df)
-
-pred_size_nuc_log2 = np.log2(pred_size_nuc / true_size_nuc)
-pred_size_cell_log2 = np.log2(pred_size_cell / true_size_cell)
-
-fig, ax = plt.subplots()
-figures.create_density_scatter(ax, true_size_cell, pred_size_cell_log2)
-#figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc_log2)
-ax.set_title('Cell segmentation area accuracy')
-ax.plot(range(4000), [0] * 4000, '-', color='red')
-#ax.set_ylim(0, 6000)
-
-fig.savefig(os.path.join(base_dir, 'Cell_Segmentation_Area_Accuracy.jpg'))
-
-# nuc accuracy
-fig, ax = plt.subplots()
-figures.create_density_scatter(ax, true_size_nuc, pred_size_nuc_log2)
-#figures.label_morphology_scatter(ax, true_size_nuc, pred_size_nuc_log2)
-ax.set_title('Nuclear segmentation area accuracy')
-ax.plot(range(4000), [0] * 4000, '-', color='red')
-
-#ax.set_ylim(0, 6000)
-
-fig.savefig(os.path.join(base_dir, 'Nuc_Segmentation_Area_Accuracy.jpg'))
-
-
-# binned barchart accuracy
-max_val = np.max(true_size_cell)
+# binned  accuracy
 max_val = 3000
 bin_size = 300
 
-cell_prop_df_cleaned['bin'] = 10
+combined['bin'] = 10
 for i in range(10):
     bin_start = i * bin_size
     bin_end = (i + 1) * bin_size
-    idx = np.logical_and(cell_prop_df_cleaned['area_true'] > bin_start, cell_prop_df_cleaned['area_true'] <= bin_end)
-    cell_prop_df_cleaned.loc[idx, 'bin'] = i
+    idx = np.logical_and(combined['area_true'] > bin_start, combined['area_true'] <= bin_end)
+    combined.loc[idx, 'bin'] = i
 
 
-nuc_expansion_prop_df['bin'] = 10
-for i in range(10):
-    bin_start = i * bin_size
-    bin_end = (i + 1) * bin_size
-    idx = np.logical_and(nuc_expansion_prop_df['area_true'] > bin_start, nuc_expansion_prop_df['area_true'] <= bin_end)
-    nuc_expansion_prop_df.loc[idx, 'bin'] = i
+combined['pred_log2_nuc'] = np.log2(combined['area_pred_nuc'].values / combined['area_true_nuc'].values)
+combined['pred_log2'] = np.log2(combined['area_pred'].values / combined['area_true'].values)
 
+nonzero_idx = np.logical_and(combined['area_pred'] > 0, combined['area_pred_nuc'] > 0)
 
-cell_prop_df_cleaned = cell_prop_df_cleaned.loc[cell_prop_df_cleaned['area_pred'] > 0, :]
+plot_df = combined.loc[nonzero_idx]
+plot_df_long = pd.melt(plot_df, id_vars=['bin'], value_vars=['pred_log2', 'pred_log2_nuc'])
+g = sns.catplot(data=plot_df_long,
+                kind='violin', x='bin', y='value', hue='variable',
+                order=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-cell_prop_df_cleaned['pred_log2'] = np.log2(cell_prop_df_cleaned['area_pred'].values / cell_prop_df_cleaned['area_true'].values)
-
-nuc_expansion_prop_df = nuc_expansion_prop_df.loc[nuc_expansion_prop_df['area_pred'] > 0, :]
-
-nuc_expansion_prop_df['pred_log2'] = np.log2(nuc_expansion_prop_df['area_pred'].values / nuc_expansion_prop_df['area_true'].values)
-
-g = sns.catplot(data=cell_prop_df_cleaned.loc[cell_prop_df_cleaned['area_pred'] > 0, :],
-                kind='violin', x='bin', y='pred_log2', order=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'NA'])
-
-g.savefig(os.path.join(base_dir, 'Cell_Area_Accuracy_Violin.png'))
-
-g = sns.catplot(data=nuc_expansion_prop_df.loc[nuc_expansion_prop_df['area_pred'] > 0, :],
-                kind='violin', x='bin', y='pred_log2', order=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-g.savefig(os.path.join(base_dir, 'Nuc_Area_Accuracy_Violin.png'))
-
+x = np.linspace(0, 10, 10)
+y = np.repeat(0, 10)
+g = sns.lineplot(x, y, style=True, dashes=[(2,2)])
+plt.savefig(os.path.join(base_dir, 'Cell_Area_Accuracy_Violin_combined.pdf'))
 
 
 
@@ -338,7 +299,7 @@ fig.savefig(base_dir + 'subcellular_barchart.pdf')
 
 
 # missing signal quantification
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/datasets/20200811_tyler_phenotyping/'
 fovs = io_utils.list_folders(base_dir, 'Point')
 
 # Since each point has different channels, we need to segment them one at a time
@@ -398,57 +359,6 @@ ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
 fig.savefig(base_dir + 'missed_signal.pdf')
 
-# on a per-cell basis:
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200811_subcellular_loc/DCIS/'
-
-segmentation_labels_cell = xr.open_dataarray(base_dir + '/segmentation_labels_combined.xr')
-segmentation_labels_expanded = xr.open_dataarray(base_dir + '/segmentation_labels_nuc_expansion.xr')
-segmentation_labels_cell[..., 1] = segmentation_labels_expanded[..., 0]
-marker_counts_df = pd.DataFrame()
-
-for fov in fovs:
-    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
-                                                  img_sub_folder='potential_channels')
-
-    current_labels = segmentation_labels_cell.loc[[fov], :, :, :]
-
-    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
-        segmentation_labels=current_labels,
-        image_data=channel_data,
-        nuclear_counts=True
-    )
-    marker_counts_df = marker_counts_df.append(raw, sort=False)
-
-marker_counts_df.to_csv(os.path.join(base_dir, 'signal_extraction_comparison.csv'))
-
-marker_counts_df = pd.read_csv(os.path.join(base_dir, 'signal_extraction_comparison.csv'))
-
-# remove cells without a predicted nucleus
-marker_counts_df = marker_counts_df.loc[marker_counts_df['area_nuclear'] > 0, :]
-
-# create plotting df
-plotting_df = pd.DataFrame()
-for chan in channels:
-    # compute ratio of cell to nuclear values
-    ratio = marker_counts_df[chan].values / marker_counts_df[chan + '_nuclear'].values
-
-    # cells without nuclear counts (divide by zero) become ratio of 10
-    ratio[marker_counts_df[chan + '_nuclear'] == 0] = 10
-
-    # only keep cells that are in top 90% for marker expression
-    cell_counts = marker_counts_df[chan].values
-    cutoff = np.percentile(cell_counts[cell_counts > 0], [10])
-    idx = cell_counts > cutoff[0]
-
-    ratio = ratio[idx]
-
-    # cap maximum at 10
-    ratio[ratio > 10] = 10
-    current_df = pd.DataFrame({'marker': chan, 'ratio': ratio})
-    plotting_df = plotting_df.append(current_df)
-
-sns.boxplot(x='marker', y='ratio', data=plotting_df)
-plt.savefig(os.path.join(base_dir, 'signal_extraction_proportion.jpg'))
 
 # Number of cells without a nucleus across tissue types
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200831_figure_4'

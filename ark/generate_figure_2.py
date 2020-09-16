@@ -146,3 +146,70 @@ plt.savefig(os.path.join(base_dir, 'F1_scores_new.pdf'), transparent=True)
 
 
 fig.savefig(base_dir + 'f1_score.tiff')
+
+
+# missing signal on a per-cell basis:
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200811_tyler_phenotyping/'
+plot_dir = ''
+segmentation_labels_cell = xr.open_dataarray(data_dir + '/segmentation_labels_cell.xr')
+segmentation_labels_expanded = xr.open_dataarray(data_dir + '/segmentation_labels_nuc_expanded.xr')
+segmentation_labels_combined = xr.DataArray(np.concatenate((segmentation_labels_cell.values,
+                                                      segmentation_labels_expanded.values),
+                                                     axis=-1),
+                                            coords=[segmentation_labels_cell.fovs,
+                                                    segmentation_labels_cell.rows,
+                                                    segmentation_labels_cell.cols,
+                                                    ['whole_cell', 'nuclear']],
+                                            dims=segmentation_labels_cell.dims)
+fovs = io_utils.list_folders(base_dir, 'Point')
+missing_signal_df = pd.DataFrame()
+for fov in fovs:
+    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+                                                  img_sub_folder='potential_channels')
+
+    current_labels = segmentation_labels_combined.loc[[fov], :, :, :]
+
+    normalized, transformed, raw = marker_quantification.generate_expression_matrix(
+        segmentation_labels=current_labels,
+        image_data=channel_data,
+        nuclear_counts=True
+    )
+    missing_signal_df = missing_signal_df.append(raw, sort=False)
+
+missing_signal_df.to_csv(os.path.join(base_dir, 'missing_signal.csv'))
+
+missing_signal_df = pd.read_csv(os.path.join(base_dir, 'missing_signal.csv'))
+
+# remove cells without a predicted nucleus
+missing_signal_df = missing_signal_df.loc[missing_signal_df['area_nuclear'] > 0, :]
+channels = np.array(['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT'])
+
+# create plotting df
+plotting_df = pd.DataFrame()
+for chan in channels:
+    # compute ratio of cell to nuclear values
+    ratio = missing_signal_df[chan].values / missing_signal_df[chan + '_nuclear'].values
+
+    # cells without nuclear counts (divide by zero) become ratio of 10
+    ratio[missing_signal_df[chan + '_nuclear'] == 0] = 10
+
+    # only keep cells that are in top 90% for marker expression
+    cell_counts = missing_signal_df[chan].values
+    cutoff = np.percentile(cell_counts[cell_counts > 0], [10])
+    idx = cell_counts > cutoff[0]
+
+    ratio = ratio[idx]
+
+    # cap maximum at 10
+    ratio[ratio > 10] = 10
+    current_df = pd.DataFrame({'marker': chan, 'ratio': ratio})
+    plotting_df = plotting_df.append(current_df)
+
+median_array = plotting_df.groupby('marker').median()
+median_vals = median_array.values[:, 0]
+median_names = median_array.index.values
+
+idx = np.argsort(median_vals)
+sns.catplot(x='marker', y='ratio', data=plotting_df, kind='box', order=median_names[idx])
+
+plt.savefig(os.path.join(base_dir, 'signal_extraction_proportion.pdf'))
