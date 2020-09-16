@@ -39,7 +39,7 @@ def plot_mod_ap(mod_ap_list, thresholds, labels):
     fig.show()
 
 
-def plot_error_types(error_dicts, method_labels, error_labels, colors, ylim=None):
+def plot_error_types(axes, error_dicts, method_labels, error_labels, colors, ylim=None):
     data_dict = pd.DataFrame(pd.Series(error_dicts[0])).transpose()
 
     # create single dict with all errors
@@ -48,13 +48,9 @@ def plot_error_types(error_dicts, method_labels, error_labels, colors, ylim=None
 
     data_dict['algos'] = method_labels
 
-    fig, axes = plt.subplots(1, len(error_labels), figsize=(15, 4))
     for i in range(len(error_labels)):
         barchart_helper(ax=axes[i], values=data_dict[error_labels[i]], labels=method_labels,
                         title='{} Errors'.format(error_labels[i]), colors=colors, y_lim=ylim)
-
-    fig.show()
-    #fig.tight_layout()
 
 
 def barchart_helper(ax, values, labels, title, colors, y_lim=None):
@@ -484,7 +480,6 @@ def label_morphology_scatter(ax, true_vals, pred_vals):
     ax.set_ylabel('Predicted Value')
 
 
-
 def compute_morphology_metrics(true_labels, pred_labels, properties=None):
     if properties is None:
         properties = ['label', 'area', 'major_axis_length', 'minor_axis_length']
@@ -494,13 +489,13 @@ def compute_morphology_metrics(true_labels, pred_labels, properties=None):
         pred_label = pred_labels[idx, :, :, 0]
         true_label = true_labels[idx, :, :, 0]
 
-        true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_label,
+        true_ids, pred_ids = get_paired_cell_ids(true_label=true_label,
                                                          pred_label=pred_label)
 
         true_props_table = pd.DataFrame(regionprops_table(true_label, properties=properties))
         pred_props_table = pd.DataFrame(regionprops_table(pred_label, properties=properties))
 
-        paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
+        paired_df = get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
                                                true_metrics=true_props_table,
                                                pred_metrics=pred_props_table)
         paired_df['img_num'] = idx
