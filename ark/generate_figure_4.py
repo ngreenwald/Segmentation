@@ -26,6 +26,7 @@ from deepcell_toolbox.metrics import Metrics
 from ark import figures
 from ark.utils import data_utils, segmentation_utils, io_utils
 from ark.segmentation import marker_quantification
+from ark.analysis.dimensionality_reduction import visualize_dimensionality_reduction
 
 import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
@@ -407,3 +408,96 @@ ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
 ax.set_title('Fraction anuclear cells')
 fig.savefig(base_dir + '/anuclear_cell_count.pdf')
+
+# UMAP
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200916_UMAP/'
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200916_UMAP/'
+
+# segment the data
+
+modifiers = ['COH', 'Eliot', 'roshan', 'HIV']
+
+counts_matrix = pd.DataFrame()
+
+for mod in modifiers:
+    label_name = 'segmentation_labels_{}.xr'.format(mod)
+    data_name = 'deepcell_input_{}.xr'.format(mod)
+
+    segmentation_labels = xr.load_dataarray(os.path.join(data_dir, label_name))
+    input_data = xr.load_dataarray(os.path.join(data_dir, data_name))
+
+    normalized, _, _ = marker_quantification.generate_expression_matrix(
+        segmentation_labels=segmentation_labels,
+        image_data=input_data,
+        nuclear_counts=True)
+
+    normalized['dataset'] = mod
+
+    counts_matrix = counts_matrix.append(normalized)
+
+counts_matrix.to_csv(os.path.join(base_dir, 'extracted_counts.csv'))
+counts_matrix = pd.read_csv(os.path.join(base_dir, 'extracted_counts.csv'))
+
+sns.distplot(counts_matrix.loc[counts_matrix['dataset'] == 'Eliot', :]['Membrane'])
+counts_matrix['cell_type'] = 'NA'
+
+lower_bounds = [1, 1000, 0.3, 100]
+upper_bounds = [4, 3000, 0.6, 500]
+
+for i in range(len(modifiers)):
+    lower = lower_bounds[i]
+    upper = upper_bounds[i]
+    mod = modifiers[i]
+    mod_idx = counts_matrix['dataset'] == mod
+    lower_idx = counts_matrix['Membrane'] < lower
+    mid_idx = np.logical_and(counts_matrix['Membrane'] >= lower, counts_matrix['Membrane'] < upper)
+    upper_idx = counts_matrix['Membrane'] > upper
+
+    counts_matrix.loc[mod_idx * lower_idx, 'cell_type'] = 'non-epithelial'
+    counts_matrix.loc[mod_idx * mid_idx, 'cell_type'] = 'intermediate'
+    counts_matrix.loc[mod_idx * upper_idx, 'cell_type'] = 'epithelial'
+
+
+sns.distplot(counts_matrix.loc[np.logical_and(counts_matrix['cell_type'] == 'non-epithelial',
+                                              counts_matrix['dataset'] == 'roshan'), :]['Membrane'])
+
+plt.tight_layout()
+plt.savefig(os.path.join(base_dir + 'UMAP.png'))
+
+# thresholds: eliot 1000, 3000
+# roshan: 0.3, 0.6
+# COH: 1, 4
+
+umap_matrix = counts_matrix.copy()
+umap_matrix['nc_ratio'] = umap_matrix['area_nuclear'] / umap_matrix['area']
+umap_matrix['cell_skew'] = umap_matrix['major_axis_length'] / umap_matrix['minor_axis_length']
+umap_matrix['nuc_skew'] = umap_matrix['major_axis_length_nuclear'] / umap_matrix['minor_axis_length_nuclear']
+
+viz_cols = ['nc_ratio', 'cell_skew', 'nuc_skew', 'area', 'area_nuclear', 'perimeter',
+            'perimeter_nuclear']
+
+umap_matrix = umap_matrix.loc[umap_matrix['area'] > 40, :]
+umap_matrix = umap_matrix.fillna(value=0)
+
+inf_idx = np.isinf(umap_matrix['nuc_skew'].values)
+umap_matrix.loc[inf_idx, 'nuc_skew'] = 10
+
+umap_matrix = umap_matrix.iloc[:-22000, :]
+
+
+from sklearn.preprocessing import StandardScaler
+import umap.umap_ as umap
+
+reducer = umap.UMAP()
+column_data = umap_matrix[viz_cols].values
+scaled_column_data = StandardScaler().fit_transform(column_data)
+embedding = reducer.fit_transform(scaled_column_data)
+
+from ark.analysis.dimensionality_reduction import plot_dim_reduced_data
+plot_dim_reduced_data(embedding[:, 0], embedding[:, 1], fig_id=1,
+                      hue=cell_data[category], cell_data=cell_data, title=graph_title,
+                      save_dir=save_dir, save_file="UMAPVisualization.png")
+
+
+plt.tight_layout()
+plt.savefig(os.path.join(base_dir + 'UMAP.png'))

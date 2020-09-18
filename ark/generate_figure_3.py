@@ -102,19 +102,18 @@ for idx, fov in enumerate(raw_data.fovs.values):
 
 # Human Comparison
 # save segmentation labels to each folder
-base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200413_Human_Agreement/'
-prediction_xr = xr.open_dataarray(base_dir + 'segmentation_labels.xr')
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200413_Human_Agreement/'
+base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200825_figure_3_heatmaps/'
+prediction_xr = xr.open_dataarray(data_dir + 'segmentation_labels.xr')
 for i in range(prediction_xr.shape[0]):
     prediction = prediction_xr.values[i, :, :, 0]
     io.imsave(os.path.join(base_dir, prediction_xr.fovs.values[i], 'segmentation_label.tiff'),
               prediction.astype('int16'))
 
 # create list to hold f1 scores from each condition
-f1_score_values = []
-f1_score_labels = []
 folders = list(prediction_xr.fovs.values)
 folder_names = ['DCIS_MIBI', 'Colon_IF', 'Esophagus_MIBI', 'Hodgekins_Vectra']
-huamn_alg_df = pd.DataFrame()
+human_alg_df = pd.DataFrame()
 
 for i in range(len(folders)):
     # get all of the human annotations
@@ -124,23 +123,27 @@ for i in range(len(folders)):
     for img in img_names:
         current_img = io.imread(os.path.join(folder_path, img))
         imgs.append(current_img)
-
     f1_scores_human = figures.calculate_human_f1_scores(image_list=imgs)
-    f1_score_values.append(f1_scores_human)
-    f1_score_labels.append(folder_names[i] + '_human')
+    tissue_name = folder_names[i] + '_human'
+    temp_df = pd.DataFrame({'tissue': np.repeat(tissue_name, len(f1_scores_human)),
+                            'F1_score': f1_scores_human})
+    human_alg_df = human_alg_df.append(temp_df)
 
     # compare algorithm
     pred_img = io.imread(os.path.join(base_dir, folders[i], 'segmentation_label.tiff'))
     pred_img = np.expand_dims(pred_img, axis=0)
     f1_scores_alg = figures.calculate_alg_f1_scores(image_list=imgs, alg_pred=pred_img)
 
-    f1_score_values.append(f1_scores_alg)
-    f1_score_labels.append(folder_names[i] + '_alg')
+    tissue_name = folder_names[i] + '_alg'
+    temp_df = pd.DataFrame({'tissue': np.repeat(tissue_name, len(f1_scores_alg)),
+                            'F1_score': f1_scores_alg})
+    human_alg_df = human_alg_df.append(temp_df)
 
+human_alg_df.to_csv(os.path.join(base_dir + 'human_alg_comparison.csv'))
+g = sns.catplot(data=human_alg_df,
+                kind='strip', x='tissue', y='F1_score')
 
-figures.plot_annotator_agreement(f1_scores_list=f1_score_values, labels=f1_score_labels)
-plt.tight_layout()
-plt.savefig('/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200720_lab_meeting/human_comparison.pdf', transparent=True)
+plt.savefig(os.path.join(base_dir, 'human_comparison.pdf'))
 
 # Accuracy heatmaps
 base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/analyses/20200825_figure_3_heatmaps/'
