@@ -42,9 +42,9 @@ true_nuc_labels = true_labels[..., 1:]
 
 tissue_list = true_dict['tissue_list']
 platform_list = true_dict['platform_list']
-pred_nuc_expansion_labels = np.load(os.path.join(data_dir, 'predicted_labels_nuc_expansion.npz'))['y']
-pred_cell_labels = np.load(os.path.join(data_dir, 'predicted_labels_cell.npz'))['y']
-pred_nuc_labels = np.load(os.path.join(data_dir, 'predicted_labels_nuc.npz'))['y']
+pred_nuc_expansion_labels = np.load(os.path.join(data_dir, 'predicted_labels_nuc_expansion.npz'))['y'][:785]
+pred_cell_labels = np.load(os.path.join(data_dir, 'predicted_labels_cell.npz'))['y'][:785]
+pred_nuc_labels = np.load(os.path.join(data_dir, 'predicted_labels_nuc.npz'))['y'][:785]
 
 properties = ['label', 'area', 'major_axis_length', 'perimeter', 'minor_axis_length', 'centroid']
 
@@ -93,10 +93,10 @@ plt.savefig(os.path.join(base_dir, 'Cell_Area_Accuracy_Violin_combined.pdf'))
 # N/C ratio
 roshan_idx = np.logical_and(tissue_list == 'gi', platform_list == 'mibi')
 # take first 5 images, curate nuclear annotations
-roshan_cell_true = true_labels[roshan_idx]
-roshan_cell_pred = cell_labels[roshan_idx]
-roshan_nuc_pred = nuc_labels[roshan_idx]
-channel_data = true_dict['X'][:660][roshan_idx]
+roshan_cell_true = true_cell_labels[roshan_idx]
+roshan_cell_pred = pred_cell_labels[roshan_idx]
+roshan_nuc_pred = pred_nuc_labels[roshan_idx]
+channel_data = true_dict['X'][roshan_idx]
 
 for i in range(5):
     X = channel_data[[i], ...]
@@ -140,9 +140,12 @@ def calc_nuc_dist(cell_centroids, nuc_centroids):
 
 
 nc_df = pd.DataFrame()
-for i in range(5):
-    true_marker_counts = generate_segmented_data((roshan_cell_true[[i]], roshan_nuc_true[[i]]))
-    pred_marker_counts = generate_segmented_data((roshan_cell_pred[[i]], roshan_nuc_pred[[i]]))
+for i in range(true_cell_labels.shape[0]):
+    # true_marker_counts = generate_segmented_data((roshan_cell_true[[i]], roshan_nuc_true[[i]]))
+    # pred_marker_counts = generate_segmented_data((roshan_cell_pred[[i]], roshan_nuc_pred[[i]]))
+
+    true_marker_counts = generate_segmented_data((true_cell_labels[[i]], true_nuc_labels[[i]]))
+    pred_marker_counts = generate_segmented_data((pred_cell_labels[[i]], pred_nuc_labels[[i]]))
 
     true_nc = true_marker_counts['area_nuclear'] / true_marker_counts['area']
     true_label = true_marker_counts['label']
@@ -168,8 +171,11 @@ for i in range(5):
     true_df = pd.DataFrame({'label': true_label, 'nc_ratio': true_nc, 'nuc_skew': true_skew})
     pred_df = pd.DataFrame({'label': pred_label, 'nc_ratio': pred_nc, 'nuc_skew': pred_skew})
 
-    true_ids, pred_ids = figures.get_paired_cell_ids(true_label=roshan_cell_true[i, :, :, 0],
-                                                     pred_label=roshan_cell_pred[i, :, :, 0])
+    # true_ids, pred_ids = figures.get_paired_cell_ids(true_label=roshan_cell_true[i, :, :, 0],
+    #                                                  pred_label=roshan_cell_pred[i, :, :, 0])
+
+    true_ids, pred_ids = figures.get_paired_cell_ids(true_label=true_cell_labels[i, :, :, 0],
+                                                     pred_label=pred_cell_labels[i, :, :, 0])
 
     paired_df = figures.get_paired_metrics(true_ids=true_ids, pred_ids=pred_ids,
                                            true_metrics=true_df,
@@ -180,7 +186,7 @@ for i in range(5):
 
 # NC ratio
 nc_df_plot = copy.copy(nc_df)
-nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 1, 'nc_ratio_pred'] = 1
+# nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 1, 'nc_ratio_pred'] = 1
 nc_df_plot = nc_df_plot.loc[nc_df_plot['nc_ratio_pred'] > 0, :]
 
 skew_df = copy.copy(nc_df)
@@ -198,6 +204,7 @@ fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy.pdf'))
 # nuclear skew
 fig, ax = plt.subplots()
 figures.create_density_scatter(ax, skew_df['nuc_skew_true'].values, skew_df['nuc_skew_pred'].values)
+figures.label_morphology_scatter(ax, skew_df['nuc_skew_true'].values, skew_df['nuc_skew_pred'].values)
 ax.set_title('Nuc Skew Accuracy')
 fig.savefig(os.path.join(base_dir, 'Nuc_skew_accuracy.pdf'))
 
@@ -213,7 +220,7 @@ for folder in folders:
     for img in img_list:
         shutil.copy(os.path.join(base_dir, folder, img), os.path.join(potential, img))
 
-fovs = io_utils.list_folders(base_dir, 'Point')
+fovs = io_utils.list_folders(data_dir, 'Point')
 
 # copy selected membrane channel to membrane.tiff to make data loading easier
 for fov in fovs:
@@ -230,12 +237,23 @@ channel_data = data_utils.load_imgs_from_tree(base_dir, img_sub_folder='segmenta
 channel_data.to_netcdf(base_dir + 'deepcell_input.xr', format='NETCDF3_64BIT')
 
 # Since each point has different channels, we need to segment them one at a time
-segmentation_labels = xr.open_dataarray(base_dir + '/segmentation_labels_combined.xr')
+data_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/data/20200811_tyler_phenotyping/'
+segmentation_labels_cell = xr.open_dataarray(data_dir + '/segmentation_labels_cell.xr')
+segmentation_labels_nuc = xr.open_dataarray(data_dir + '/segmentation_labels_nuc.xr')
+
+segmentation_labels = xr.DataArray(np.concatenate((segmentation_labels_cell.values,
+                                                   segmentation_labels_nuc.values),
+                                                   axis=-1),
+                                   coords=[segmentation_labels_cell.fovs,
+                                           segmentation_labels_nuc.rows,
+                                           segmentation_labels_cell.cols,
+                                           ['whole_cell', 'nuclear']],
+                                   dims=segmentation_labels_nuc.dims)
 
 core_df = pd.DataFrame()
 
 for fov in fovs:
-    channel_data = data_utils.load_imgs_from_tree(base_dir, fovs=[fov],
+    channel_data = data_utils.load_imgs_from_tree(data_dir, fovs=[fov],
                                                   img_sub_folder='potential_channels')
 
     current_labels = segmentation_labels.loc[[fov], :, :, :]
@@ -247,7 +265,7 @@ for fov in fovs:
     )
     core_df = core_df.append(raw, sort=False)
 
-core_df.to_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+core_df.to_csv(os.path.join(data_dir, 'single_cell_data.csv'))
 
 # save segmentation mask outlines
 for idx, fov in enumerate(segmentation_labels.fovs.values):
@@ -263,11 +281,11 @@ for idx, fov in enumerate(segmentation_labels.fovs.values):
     io.imsave(os.path.join(base_dir, fov, 'cell_boundary.tiff'), cell_boundary)
 
 # read in segmented data
-cell_counts = pd.read_csv(os.path.join(base_dir, 'single_cell_data.csv'))
+cell_counts = pd.read_csv(os.path.join(data_dir, 'single_cell_data.csv'))
 cell_counts = cell_counts.loc[cell_counts['cell_size_nuclear'] > 20, :]
 
 
-channels = np.array(['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT', 'pS6'])
+channels = np.array(['CD44', 'ECAD', 'GLUT1', 'HER2', 'HH3', 'Ki67', 'P', 'PanKRT'])
 nuc_frac = []
 
 # compute nuclear fraction
@@ -366,17 +384,14 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 nuc_labels = np.load(os.path.join(base_dir, 'predicted_labels_nuc.npz'))['y']
 cell_labels = np.load(os.path.join(base_dir, 'predicted_labels_cell.npz'))['y']
 true_dict = np.load(os.path.join(base_dir, '20200908_multiplex_test_256x256.npz'))
-true_labels = true_dict['y'].astype('int16')[:660]
-tissue_list = true_dict['tissue_list'][:660]
-platform_list = true_dict['platform_list'][:660]
 
-combined_labels = xr.DataArray(np.concatenate((cell_labels, nuc_labels), axis=-1),
-                               coords=[range(nuc_labels.shape[0]), range(256), range(256),
+combined_labels = xr.DataArray(np.concatenate((pred_cell_labels, pred_nuc_labels), axis=-1),
+                               coords=[range(pred_nuc_labels.shape[0]), range(256), range(256),
                                              ['whole_cell', 'nuclear']],
                                dims=['fovs', 'rows', 'cols', 'compartments'])
 
-blank_channel_data = xr.DataArray(np.full_like(cell_labels, 1),
-                                  coords=[range(cell_labels.shape[0]), range(256), range(256),
+blank_channel_data = xr.DataArray(np.full_like(pred_cell_labels, 1),
+                                  coords=[range(pred_cell_labels.shape[0]), range(256), range(256),
                                           ['example_channel']],
                                   dims=['fovs', 'rows', 'cols', 'channels'])
 normalized, _, _ = marker_quantification.generate_expression_matrix(
@@ -415,7 +430,7 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 
 # segment the data
 
-modifiers = ['COH', 'Eliot', 'roshan', 'HIV']
+modifiers = ['COH_BC', 'Eliot', 'roshan', 'HIV', 'COH_LN', 'CyCIF_Lung', 'CyCIF_Tonsil']
 
 counts_matrix = pd.DataFrame()
 
@@ -435,14 +450,14 @@ for mod in modifiers:
 
     counts_matrix = counts_matrix.append(normalized)
 
-counts_matrix.to_csv(os.path.join(base_dir, 'extracted_counts.csv'))
+counts_matrix.to_csv(os.path.join(base_dir, 'extracted_counts_updated.csv'))
 counts_matrix = pd.read_csv(os.path.join(base_dir, 'extracted_counts.csv'))
 
-sns.distplot(counts_matrix.loc[counts_matrix['dataset'] == 'Eliot', :]['Membrane'])
+sns.distplot(counts_matrix.loc[counts_matrix['dataset'] == 'CyCIF_Tonsil', :]['Membrane'])
 counts_matrix['cell_type'] = 'NA'
 
-lower_bounds = [1, 1000, 0.3, 100]
-upper_bounds = [4, 3000, 0.6, 500]
+lower_bounds = [1, 1000, 0.3, 100, 20, 3000, 50000]
+upper_bounds = [4, 3000, 0.6, 101, 21, 6000, 50001]
 
 for i in range(len(modifiers)):
     lower = lower_bounds[i]
@@ -458,23 +473,33 @@ for i in range(len(modifiers)):
     counts_matrix.loc[mod_idx * upper_idx, 'cell_type'] = 'epithelial'
 
 
-sns.distplot(counts_matrix.loc[np.logical_and(counts_matrix['cell_type'] == 'non-epithelial',
-                                              counts_matrix['dataset'] == 'roshan'), :]['Membrane'])
+# check distribution of membrane signal across thresholded populations
+sns.distplot(counts_matrix.loc[np.logical_and(counts_matrix['cell_type'] == 'epithelial',
+                                              counts_matrix['dataset'] == 'COH_BC'), :]['Membrane'])
 
 plt.tight_layout()
 plt.savefig(os.path.join(base_dir + 'UMAP.png'))
 
-# thresholds: eliot 1000, 3000
-# roshan: 0.3, 0.6
-# COH: 1, 4
 
 umap_matrix = counts_matrix.copy()
 umap_matrix['nc_ratio'] = umap_matrix['area_nuclear'] / umap_matrix['area']
 umap_matrix['cell_skew'] = umap_matrix['major_axis_length'] / umap_matrix['minor_axis_length']
 umap_matrix['nuc_skew'] = umap_matrix['major_axis_length_nuclear'] / umap_matrix['minor_axis_length_nuclear']
 
-viz_cols = ['nc_ratio', 'cell_skew', 'nuc_skew', 'area', 'area_nuclear', 'perimeter',
-            'perimeter_nuclear']
+nuc_eccentricity = calc_nuc_dist((umap_matrix['centroid-0'].values,
+                                  umap_matrix['centroid-1'].values),
+                                 (umap_matrix['centroid-0_nuclear'].values,
+                                  umap_matrix['centroid-1_nuclear'].values)
+                                 )
+
+nuc_eccentricity /= umap_matrix['major_axis_length'].values
+umap_matrix['nuc_ecc'] = nuc_eccentricity
+
+# check distribution of plotting parameters across populations
+sns.distplot(umap_matrix.loc[np.logical_and(umap_matrix['cell_type'] == 'epithelial',
+                                              umap_matrix['dataset'] == 'COH_BC'), :]['nc_ratio'])
+
+viz_cols = ['nc_ratio', 'cell_skew', 'area', 'perimeter', 'nuc_ecc']
 
 umap_matrix = umap_matrix.loc[umap_matrix['area'] > 40, :]
 umap_matrix = umap_matrix.fillna(value=0)
@@ -484,6 +509,9 @@ umap_matrix.loc[inf_idx, 'nuc_skew'] = 10
 
 umap_matrix = umap_matrix.iloc[:-22000, :]
 
+umap_matrix = umap_matrix.loc[umap_matrix['dataset'] != 'Eliot']
+
+np.unique(umap_matrix['dataset'], return_counts=True)
 
 from sklearn.preprocessing import StandardScaler
 import umap.umap_ as umap
@@ -493,11 +521,13 @@ column_data = umap_matrix[viz_cols].values
 scaled_column_data = StandardScaler().fit_transform(column_data)
 embedding = reducer.fit_transform(scaled_column_data)
 
-from ark.analysis.dimensionality_reduction import plot_dim_reduced_data
-plot_dim_reduced_data(embedding[:, 0], embedding[:, 1], fig_id=1,
-                      hue=cell_data[category], cell_data=cell_data, title=graph_title,
-                      save_dir=save_dir, save_file="UMAPVisualization.png")
+from ark.analysis import dimensionality_reduction
 
+dimensionality_reduction.plot_dim_reduced_data(embedding[:, 0], embedding[:, 1], fig_id=1,
+                                               hue=umap_matrix['dataset'], cell_data=umap_matrix,
+                                               title='UMAP',
+                                               save_dir=None, save_file="UMAPVisualization.png")
 
 plt.tight_layout()
-plt.savefig(os.path.join(base_dir + 'UMAP.png'))
+
+plt.savefig(os.path.join(base_dir + 'UMAP_by_dataset.pdf'))

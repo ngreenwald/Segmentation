@@ -159,14 +159,14 @@ all_tissue = np.load(base_dir + 'all_tissue_accuracy.npz', allow_pickle=True)['s
 tissue_types = ['gi', 'breast', 'pancreas', 'all']
 save_path = os.path.join(base_dir, 'tissue_heatmap.tiff')
 platform_array = figures.create_f1_score_grid([gi, breast, pancreas, all_tissue], tissue_types)
-figures.plot_heatmap(vals=platform_array.values, x_labels=tissue_types, y_labels=tissue_types,
-                     title='accuracy across tissue types',
-                     save_path=os.path.join(base_dir, 'tissue_heatmap.tiff'), cmap='Reds')
+ax = sns.heatmap(data=platform_array, annot=True, vmin=0, cmap='viridis')
+plt.savefig(os.path.join(base_dir, 'tissue_heatmap_virdis_sns.pdf'))
+
 
 
 platform_types = ['vectra', 'mibi', 'all']
-save_path = os.path.join(base_dir, 'platform_heatmap.tiff')
+save_path = os.path.join(base_dir, 'platform_heatmap.pdf')
 platform_array = figures.create_f1_score_grid([vectra, mibi, all_platform], platform_types)
-figures.plot_heatmap(vals=platform_array.values, x_labels=platform_types, y_labels=platform_types,
-                     title='accuracy across platforms',
-                     save_path=os.path.join(base_dir, 'platform_heatmap.tiff'), cmap='Reds')
+
+ax = sns.heatmap(data=platform_array, annot=True, vmin=0, cmap='viridis')
+plt.savefig(os.path.join(base_dir, 'tissue_heatmap_virdis.pdf'))

@@ -28,6 +28,7 @@ from ark.utils import data_utils, segmentation_utils, io_utils
 from ark.segmentation import marker_quantification
 
 import matplotlib
+import seaborn as sns
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
@@ -58,7 +59,7 @@ figures.barchart_helper(ax=ax, values=[total_time / 3600, internal_hours],
                         title='Total hours',
                         colors='blue')
 fig.tight_layout()
-fig.savefig(os.path.join(plot_dir, 'hours.tiff'))
+fig.savefig(os.path.join(plot_dir, 'hours.pdf'))
 
 # counts by modality
 tissue_counts = np.load(plot_dir + 'tissue_counts.npz',
@@ -74,7 +75,7 @@ figures.barchart_helper(ax=ax, values=tissue_vals[sort_idx],
                         labels=tissue_names[sort_idx],
                         title='Cells per tissue type', colors='blue')
 fig.tight_layout()
-fig.savefig(os.path.join(plot_dir, 'annotations_per_tissue.tiff'))
+fig.savefig(os.path.join(plot_dir, 'annotations_per_tissue.pdf'))
 
 # counts by modality
 platform_counts = np.load(plot_dir + 'platform_counts.npz',
@@ -92,4 +93,44 @@ figures.barchart_helper(ax=ax, values=platform_vals[sort_idx],
                         labels=platform_names[sort_idx],
                         title='Cells per platform type', colors='blue')
 fig.tight_layout()
-fig.savefig(os.path.join(plot_dir, 'annotations_per_platform.tiff'))
+fig.savefig(os.path.join(plot_dir, 'annotations_per_platform.pdf'))
+
+
+# dataset size
+papers = ['CCDB 6843 (2009)', 'DeepCell (2016)', 'NucleusSegData (2018)', 'Kaggle DSB (2018)',
+          'BBBC039v1* (2018)', 'MoNucSeg (2018)', 'NucleusSegData (2019)',
+          'Live-Cell Tracking (2019)', 'MoNucSeg (2020)', 'Kaggle DSB (2018) Tissue']
+# nuclear labels
+nuc_counts = [0, 2470, 2661, 28249, 23000, 21623, 3329, 250000, 31411, 0]
+
+# cyto labels
+cyto = [5124, 2527, 0, 0, 0, 0, 0, 0, 0, 9084]
+
+combined = np.array(nuc_counts) + np.array(cyto)
+
+data_type = ['cell_culture', 'cell_culture', 'cell_culture', 'cell_culture', 'cell_culture', 'tissue',
+             'cell_culture', 'cell_culture', 'tissue', 'tissue']
+
+annotations = ["whole-cell", "both", "nuclear", "nuclear", "nuclear", "nuclear", "nuclear",
+               "nuclear", "nuclear", 'nuclear']
+
+published_data = pd.DataFrame({'paper': papers, 'nuclear_annotations': nuc_counts,
+                               'cyto_annotations': cyto,
+                               'all_annotations': combined,
+                               'image_type': data_type, 'annotation_type': annotations})
+
+
+published_data.to_csv(os.path.join(plot_dir, 'published_annotations.csv'))
+
+cell_annotations = np.sum(published_data['cyto_annotations'])
+tissue_annotations = np.sum(published_data.loc[published_data['image_type'] == 'tissue', :]['all_annotations'])
+all_annotations = np.sum(published_data['all_annotations'])
+our_annotations = 1000000
+
+summary = pd.DataFrame({'label': ['whole-cell', 'tissue', 'all_previous', 'This Work'],
+                        'values': [cell_annotations, tissue_annotations, all_annotations,
+                                   our_annotations]})
+
+g = sns.catplot(data=summary, kind='bar', x='label', y='values', color='blue')
+
+plt.savefig(os.path.join(plot_dir, 'published_Cell_counts.pdf'))
