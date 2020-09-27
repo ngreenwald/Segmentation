@@ -127,7 +127,8 @@ def generate_segmented_data(labels_tuple):
     normalized, _, _ = marker_quantification.generate_expression_matrix(
         segmentation_labels=label_xr,
         image_data=channel_xr,
-        nuclear_counts=True)
+        nuclear_counts=True,
+        split_large_nuclei=True)
 
     return normalized
 
@@ -198,7 +199,7 @@ fig, ax = plt.subplots()
 figures.create_density_scatter(ax, nc_df_plot['nc_ratio_true'].values, nc_df_plot['nc_ratio_pred'].values)
 figures.label_morphology_scatter(ax, nc_df_plot['nc_ratio_true'].values, nc_df_plot['nc_ratio_pred'].values)
 ax.set_title('NC Ratio Accuracy')
-fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy.pdf'))
+fig.savefig(os.path.join(base_dir, 'NC_ratio_Accuracy_updated.pdf'))
 
 
 # nuclear skew
@@ -431,22 +432,27 @@ base_dir = '/Users/noahgreenwald/Documents/Grad_School/Lab/Segmentation_Project/
 # segment the data
 
 modifiers = ['COH_BC', 'Eliot', 'roshan', 'HIV', 'COH_LN', 'CyCIF_Lung', 'CyCIF_Tonsil']
+platforms = ['Vectra', 'MxIF', 'MIBI', 'MIBI', 'Vectra', 'CyCIF', 'CyCIF']
 
 counts_matrix = pd.DataFrame()
 
-for mod in modifiers:
+for i in range(len(modifiers)):
+    mod = modifiers[i]
+    plat = platforms[i]
     label_name = 'segmentation_labels_{}.xr'.format(mod)
     data_name = 'deepcell_input_{}.xr'.format(mod)
 
-    segmentation_labels = xr.load_dataarray(os.path.join(data_dir, label_name))
-    input_data = xr.load_dataarray(os.path.join(data_dir, data_name))
+    segmentation_labels = xr.open_dataarray(os.path.join(data_dir, label_name))
+    input_data = xr.open_dataarray(os.path.join(data_dir, data_name))
 
     normalized, _, _ = marker_quantification.generate_expression_matrix(
         segmentation_labels=segmentation_labels,
         image_data=input_data,
-        nuclear_counts=True)
+        nuclear_counts=True,
+        split_large_nuclei=True)
 
     normalized['dataset'] = mod
+    normalized['platform'] = plat
 
     counts_matrix = counts_matrix.append(normalized)
 
@@ -454,7 +460,6 @@ counts_matrix.to_csv(os.path.join(base_dir, 'extracted_counts_updated.csv'))
 counts_matrix = pd.read_csv(os.path.join(base_dir, 'extracted_counts.csv'))
 
 sns.distplot(counts_matrix.loc[counts_matrix['dataset'] == 'CyCIF_Tonsil', :]['Membrane'])
-counts_matrix['cell_type'] = 'NA'
 
 lower_bounds = [1, 1000, 0.3, 100, 20, 3000, 50000]
 upper_bounds = [4, 3000, 0.6, 101, 21, 6000, 50001]
@@ -477,10 +482,6 @@ for i in range(len(modifiers)):
 sns.distplot(counts_matrix.loc[np.logical_and(counts_matrix['cell_type'] == 'epithelial',
                                               counts_matrix['dataset'] == 'COH_BC'), :]['Membrane'])
 
-plt.tight_layout()
-plt.savefig(os.path.join(base_dir + 'UMAP.png'))
-
-
 umap_matrix = counts_matrix.copy()
 umap_matrix['nc_ratio'] = umap_matrix['area_nuclear'] / umap_matrix['area']
 umap_matrix['cell_skew'] = umap_matrix['major_axis_length'] / umap_matrix['minor_axis_length']
@@ -497,37 +498,35 @@ umap_matrix['nuc_ecc'] = nuc_eccentricity
 
 # check distribution of plotting parameters across populations
 sns.distplot(umap_matrix.loc[np.logical_and(umap_matrix['cell_type'] == 'epithelial',
-                                              umap_matrix['dataset'] == 'COH_BC'), :]['nc_ratio'])
+                                              umap_matrix['dataset'] == 'COH_BC'), :]['nuc_ecc'])
 
 viz_cols = ['nc_ratio', 'cell_skew', 'area', 'perimeter', 'nuc_ecc']
 
 umap_matrix = umap_matrix.loc[umap_matrix['area'] > 40, :]
 umap_matrix = umap_matrix.fillna(value=0)
 
-inf_idx = np.isinf(umap_matrix['nuc_skew'].values)
-umap_matrix.loc[inf_idx, 'nuc_skew'] = 10
+inf_idx = np.isinf(umap_matrix['cell_skew'].values)
+umap_matrix.loc[inf_idx, 'cell_skew'] = 10
 
-umap_matrix = umap_matrix.iloc[:-22000, :]
-
-umap_matrix = umap_matrix.loc[umap_matrix['dataset'] != 'Eliot']
+anuc_idx =umap_matrix['area_nuclear'] == 0
+umap_matrix.loc[anuc_idx, 'nuc_ecc'] = 0
 
 np.unique(umap_matrix['dataset'], return_counts=True)
 
 from sklearn.preprocessing import StandardScaler
 import umap.umap_ as umap
+from ark.analysis import dimensionality_reduction
 
 reducer = umap.UMAP()
+
 column_data = umap_matrix[viz_cols].values
 scaled_column_data = StandardScaler().fit_transform(column_data)
 embedding = reducer.fit_transform(scaled_column_data)
 
-from ark.analysis import dimensionality_reduction
 
 dimensionality_reduction.plot_dim_reduced_data(embedding[:, 0], embedding[:, 1], fig_id=1,
-                                               hue=umap_matrix['dataset'], cell_data=umap_matrix,
-                                               title='UMAP',
-                                               save_dir=None, save_file="UMAPVisualization.png")
-
+                                               hue=umap_matrix['platform'], cell_data=umap_matrix,
+                                               title="UMAP by Platform")
 plt.tight_layout()
 
-plt.savefig(os.path.join(base_dir + 'UMAP_by_dataset.pdf'))
+plt.savefig(os.path.join(base_dir + 'UMAP_by_Platform.pdf'))

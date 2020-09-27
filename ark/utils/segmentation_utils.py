@@ -72,7 +72,7 @@ def split_large_nuclei(cell_segmentation_mask, nuc_segmentation_mask, cell_ids):
             nuc_mask = nuc_segmentation_mask == nuc_id
 
             # only proceed if parts of the nucleus are outside of the cell
-            if nuc_count != np.sum(nuc_mask):
+            if np.sum(nuc_mask) - nuc_count > 5:
                 # relabel nuclear counts within the cell
                 cell_mask = cell_segmentation_mask == cell
                 new_nuc_mask = np.logical_and(cell_mask, nuc_mask)
