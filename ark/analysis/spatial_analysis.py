@@ -10,7 +10,10 @@ import ark.settings as settings
 def calculate_channel_spatial_enrichment(dist_matrices_dict, marker_thresholds, all_data,
                                          excluded_channels=None, included_fovs=None,
                                          dist_lim=100, bootstrap_num=1000,
-                                         fov_col=settings.FOV_ID):
+                                         fov_col=settings.FOV_ID,
+                                         cell_lin_col=settings.CELL_LINEAGE,
+                                         cell_label_col=settings.CELL_LABEL,
+                                         context=False):
     """Spatial enrichment analysis to find significant interactions between cells expressing
     different markers. Uses bootstrapping to permute cell labels randomly.
 
@@ -32,6 +35,16 @@ def calculate_channel_spatial_enrichment(dist_matrices_dict, marker_thresholds, 
             number of permutations for bootstrap. Default is 1000.
         fov_col (str):
             column with the cell fovs.
+        cell_lin_col (str):
+            The column specifying the name of the cell lineages column,
+            needed to help facet all_data for context-dependent ranomization.
+            Ignored if context is set to False.
+        cell_label_col (str):
+            The column specifying the name of the cell labels column,
+            needed to help properly index into the xarray for context-dependent randomization.
+            Ignored if context is set to False.
+        context (bool):
+            if we want to specify context-dependent randomization or not. Default is False.
 
     Returns:
         tuple (list, xarray.DataArray):
@@ -42,6 +55,9 @@ def calculate_channel_spatial_enrichment(dist_matrices_dict, marker_thresholds, 
           stats variables for each fov are z, muhat, sigmahat, p, h, adj_p, and
           cluster_names
     """
+
+    if fov_col not in all_data.columns.values:
+        raise ValueError("fov_col %s does not exist in all_data")
 
     # Setup input and parameters
     if included_fovs is None:
@@ -100,15 +116,24 @@ def calculate_channel_spatial_enrichment(dist_matrices_dict, marker_thresholds, 
         dist_matrix = dist_matrices_dict[fov]
 
         # Get close_num and close_num_rand
-        close_num, channel_nums, _ = spatial_analysis_utils.compute_close_cell_num(
-            dist_mat=dist_matrix, dist_lim=100, analysis_type="channel",
+        close_num, channel_nums = spatial_analysis_utils.compute_close_cell_num(
+            dist_mat=dist_matrix, dist_lim=dist_lim, analysis_type="channel",
             current_fov_data=current_fov_data, current_fov_channel_data=current_fov_channel_data,
             thresh_vec=thresh_vec)
 
-        close_num_rand = spatial_analysis_utils.compute_close_cell_num_random(
-            channel_nums, dist_matrix, dist_lim, bootstrap_num)
-
-        values.append((close_num, close_num_rand))
+        # run context-dependent randomization if context is True
+        # otherwise run basic randomization
+        if context:
+            close_num_rand = spatial_analysis_utils.compute_close_cell_num_random_context(
+                marker_nums=channel_nums, dist_mat=dist_matrix, dist_lim=dist_lim,
+                bootstrap_num=bootstrap_num, thresh_vec=thresh_vec,
+                current_fov_data=current_fov_data,
+                current_fov_channel_data=current_fov_channel_data,
+                cell_lin_col=cell_lin_col, cell_label_col=cell_label_col)
+        else:
+            close_num_rand = spatial_analysis_utils.compute_close_cell_num_random(
+                marker_nums=channel_nums, dist_mat=dist_matrix, dist_lim=dist_lim,
+                bootstrap_num=bootstrap_num)
 
         # Get z, p, adj_p, muhat, sigmahat, and h
         stats_xr = spatial_analysis_utils.calculate_enrichment_stats(close_num, close_num_rand)
@@ -159,6 +184,12 @@ def calculate_cluster_spatial_enrichment(all_data, dist_matrices_dict, included_
           cluster_names
     """
 
+    if fov_col not in all_data.columns.values:
+        raise ValueError("fov_col %s does not exist in all_data")
+
+    if cluster_id_col not in all_data.columns.values:
+        raise ValueError("cluster_id_col %s does not exist in all_data")
+
     # Setup input and parameters
     if included_fovs is None:
         included_fovs = all_data[fov_col].unique()
@@ -198,15 +229,12 @@ def calculate_cluster_spatial_enrichment(all_data, dist_matrices_dict, included_
         dist_mat = dist_matrices_dict[fov]
 
         # Get close_num and close_num_rand
-        close_num, pheno_nums, pheno_nums_per_id = spatial_analysis_utils.compute_close_cell_num(
+        close_num, pheno_nums = spatial_analysis_utils.compute_close_cell_num(
             dist_mat=dist_mat, dist_lim=dist_lim, analysis_type="cluster",
             current_fov_data=current_fov_pheno_data, cluster_ids=cluster_ids)
 
         close_num_rand = spatial_analysis_utils.compute_close_cell_num_random(
             pheno_nums, dist_mat, dist_lim, bootstrap_num)
-
-        # close_num_rand_context = spatial_analysis_utils.compute_close_cell_num_random(
-        #     pheno_nums_per_id, dist_mat, dist_lim, bootstrap_num)
 
         values.append((close_num, close_num_rand))
 
@@ -247,6 +275,9 @@ def create_neighborhood_matrix(all_data, dist_matrices_dict, included_fovs=None,
             DataFrame containing phenotype counts per cell tupled with DataFrame containing
             phenotype frequencies of counts per phenotype/total phenotypes for each cell
     """
+
+    if fov_col not in all_data.columns.values:
+        raise ValueError("fov_col %s does not exist in all_data")
 
     # Setup input and parameters
     if included_fovs is None:

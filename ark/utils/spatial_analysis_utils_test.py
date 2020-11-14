@@ -109,8 +109,16 @@ def test_compute_close_cell_num():
     # Subsetting threshold matrix to only include column with threshold values
     thresh_vec = example_thresholds.iloc[0:20, 1].values
 
+    # basic error checking
+    with pytest.raises(ValueError):
+        # ensure we throw an error if a bad analysis type is passed
+        example_closenum, m1 = spatial_analysis_utils.compute_close_cell_num(
+            dist_mat=example_dist_mat, dist_lim=100, analysis_type="bad_type",
+            current_fov_data=all_data, current_fov_channel_data=fov_channel_data,
+            thresh_vec=thresh_vec)
+
     # not taking into account mark1labels_per_id return value
-    example_closenum, m1, _ = spatial_analysis_utils.compute_close_cell_num(
+    example_closenum, m1 = spatial_analysis_utils.compute_close_cell_num(
         dist_mat=example_dist_mat, dist_lim=100, analysis_type="channel",
         current_fov_data=all_data, current_fov_channel_data=fov_channel_data,
         thresh_vec=thresh_vec)
@@ -127,7 +135,7 @@ def test_compute_close_cell_num():
     # Subsetting threshold matrix to only include column with threshold values
     thresh_vec = example_thresholds.iloc[0:20, 1].values
 
-    example_closenum, m1, _ = spatial_analysis_utils.compute_close_cell_num(
+    example_closenum, m1 = spatial_analysis_utils.compute_close_cell_num(
         dist_mat=example_dist_mat, dist_lim=100, analysis_type="channel",
         current_fov_data=all_data, current_fov_channel_data=fov_channel_data,
         thresh_vec=thresh_vec)
@@ -140,7 +148,7 @@ def test_compute_close_cell_num():
     all_data, example_dist_mat = test_utils._make_dist_exp_mats_spatial_utils_test()
     cluster_ids = all_data.loc[:, settings.CLUSTER_ID].drop_duplicates().values
 
-    example_closenum, m1, _ = spatial_analysis_utils.compute_close_cell_num(
+    example_closenum, m1 = spatial_analysis_utils.compute_close_cell_num(
         dist_mat=example_dist_mat, dist_lim=100, analysis_type="cluster",
         current_fov_data=all_data, cluster_ids=cluster_ids)
 
@@ -160,6 +168,55 @@ def test_compute_close_cell_num_random():
     )
 
     assert example_closenumrand.shape == (20, 20, 100)
+
+
+def test_compute_close_cell_num_random_context():
+    all_data, example_distmat = test_utils._make_dist_exp_mats_spatial_utils_test()
+
+    # Only include the columns of markers for fov_channel_data
+    fov_channel_data = all_data.drop(all_data.columns[[
+        0, 1, 14, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]], axis=1)
+
+    # Generate random inputs to test shape
+    marker_nums = [random.randrange(0, 10) for i in range(20)]
+
+    # Generate example thresholds, subset threshold matrix to only include
+    # column with threshold values
+    example_thresholds = test_utils._make_threshold_mat(in_utils=True)
+    thresh_vec = example_thresholds.iloc[0:20, 1]
+
+    example_closenumrand_context = spatial_analysis_utils.compute_close_cell_num_random_context(
+        marker_nums=marker_nums, dist_mat=example_distmat, dist_lim=100, bootstrap_num=100,
+        thresh_vec=thresh_vec, current_fov_data=all_data,
+        current_fov_channel_data=fov_channel_data
+    )
+
+    assert example_closenumrand_context.shape == (20, 20, 100)
+
+    # error checking
+    with pytest.raises(ValueError):
+        # attempt to specify a cell_lin_col that doesn't exist in current_fov_data
+        _, stats_no_enrich = \
+            spatial_analysis_utils.compute_close_cell_num_random_context(
+                marker_nums=marker_nums, dist_mat=example_distmat, dist_lim=100,
+                bootstrap_num=100, thresh_vec=thresh_vec, current_fov_data=all_data,
+                current_fov_channel_data=fov_channel_data, cell_lin_col="bad_cell_lin_col")
+
+    with pytest.raises(ValueError):
+        # attempt to specify a cell_label_col that doesn't exist in current_fov_data
+        _, stats_no_enrich = \
+            spatial_analysis_utils.compute_close_cell_num_random_context(
+                marker_nums=marker_nums, dist_mat=example_distmat, dist_lim=100,
+                bootstrap_num=100, thresh_vec=thresh_vec, current_fov_data=all_data,
+                current_fov_channel_data=fov_channel_data, cell_label_col="bad_cell_label_col")
+
+    with pytest.raises(ValueError):
+        # attempt to include non-existant cell_types for context-based randomization
+        _, stats_no_enrich = \
+            spatial_analysis_utils.compute_close_cell_num_random_context(
+                marker_nums=marker_nums, dist_mat=example_distmat, dist_lim=100,
+                bootstrap_num=100, thresh_vec=thresh_vec, current_fov_data=all_data,
+                current_fov_channel_data=fov_channel_data)
 
 
 def test_calculate_enrichment_stats():

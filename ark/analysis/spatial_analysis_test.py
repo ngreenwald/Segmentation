@@ -42,6 +42,7 @@ def test_calculate_channel_spatial_enrichment():
     all_data_pos, dist_mat_pos = test_utils._make_dist_exp_mats_spatial_test(
         enrichment_type="positive", dist_lim=dist_lim)
 
+    # Positive enrichment, basic randomization
     _, stats_pos = \
         spatial_analysis.calculate_channel_spatial_enrichment(
             dist_mat_pos, marker_thresholds, all_data_pos,
@@ -58,6 +59,13 @@ def test_calculate_channel_spatial_enrichment():
     assert stats_pos.loc["fov9", "p_pos", 3, 2] < .05
     assert stats_pos.loc["fov9", "p_neg", 3, 2] > .05
     assert stats_pos.loc["fov9", "z", 3, 2] > 0
+
+    # Positive enrichment, context-based randomization
+    _, stats_pos_context = \
+        spatial_analysis.calculate_channel_spatial_enrichment(
+            dist_mat_pos, marker_thresholds, all_data_pos,
+            excluded_channels=EXCLUDE_CHANNELS, bootstrap_num=100,
+            dist_lim=dist_lim, context=True)
 
     # Negative enrichment
     all_data_neg, dist_mat_neg = test_utils._make_dist_exp_mats_spatial_test(
@@ -80,6 +88,13 @@ def test_calculate_channel_spatial_enrichment():
     assert stats_neg.loc["fov9", "p_pos", 3, 2] > .05
     assert stats_neg.loc["fov9", "z", 3, 2] < 0
 
+    # Negative enrichment, context-based randomization
+    _, stats_neg_context = \
+        spatial_analysis.calculate_channel_spatial_enrichment(
+            dist_mat_neg, marker_thresholds, all_data_neg,
+            excluded_channels=EXCLUDE_CHANNELS, bootstrap_num=100,
+            dist_lim=dist_lim, context=True)
+
     # No enrichment
     all_data_no_enrich, dist_mat_no_enrich = test_utils._make_dist_exp_mats_spatial_test(
         enrichment_type="none", dist_lim=dist_lim)
@@ -101,7 +116,21 @@ def test_calculate_channel_spatial_enrichment():
     assert stats_no_enrich.loc["fov9", "p_neg", 3, 2] > .05
     assert abs(stats_no_enrich.loc["fov9", "z", 3, 2]) < 2
 
+    # No enrichment, context-based randomization
+    _, stats_no_enrich_context = \
+        spatial_analysis.calculate_channel_spatial_enrichment(
+            dist_mat_no_enrich, marker_thresholds, all_data_no_enrich,
+            excluded_channels=EXCLUDE_CHANNELS, bootstrap_num=100,
+            dist_lim=dist_lim, context=True)
+
     # error checking
+    with pytest.raises(ValueError):
+        # attempt to specify a fov_col that doesn't exist in all_data
+        _ = _, stats_no_enrich = \
+            spatial_analysis.calculate_channel_spatial_enrichment(
+                dist_mat_no_enrich, marker_thresholds, all_data_no_enrich,
+                fov_col="bad_fov_col")
+
     with pytest.raises(ValueError):
         # attempt to exclude a column name that doesn't appear in the expression matrix
         _, stats_no_enrich = \
@@ -194,6 +223,20 @@ def test_calculate_cluster_spatial_enrichment():
 
     # error checking
     with pytest.raises(ValueError):
+        # attempt to specify a fov_col that doesn't exist in all_data
+        _, stats_no_enrich = \
+            spatial_analysis.calculate_cluster_spatial_enrichment(
+                all_data_no_enrich, dist_mat_no_enrich,
+                fov_col="bad_fov_col")
+
+    with pytest.raises(ValueError):
+        # attempt to specify a cluster_id_col that doesn't exist in all_data
+        _, stats_no_enrich = \
+            spatial_analysis.calculate_cluster_spatial_enrichment(
+                all_data_no_enrich, dist_mat_no_enrich,
+                cluster_id_col="bad_cluster_id_col")
+
+    with pytest.raises(ValueError):
         # attempt to include fovs that do not exist
         _, stats_no_enrich = \
             spatial_analysis.calculate_cluster_spatial_enrichment(
@@ -218,6 +261,12 @@ def test_create_neighborhood_matrix():
     assert (counts.loc[90:99, "Pheno1"] == 8).all()
 
     # error checking
+    with pytest.raises(ValueError):
+        # attempt to specify a fov_col that doesn't exist in all_data
+        counts, freqs = spatial_analysis.create_neighborhood_matrix(
+            all_data_pos, dist_mat_pos, fov_col="bad_fov_col"
+        )
+
     with pytest.raises(ValueError):
         # attempt to include fovs that do not exist
         counts, freqs = spatial_analysis.create_neighborhood_matrix(

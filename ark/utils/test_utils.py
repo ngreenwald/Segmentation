@@ -583,12 +583,13 @@ DEFAULT_COLUMNS_LIST = \
         settings.FOV_ID,
         settings.CLUSTER_ID,
         settings.CELL_TYPE,
+        settings.CELL_LINEAGE
     ]
 list(map(
     DEFAULT_COLUMNS_LIST.__setitem__, [1, 14, 23], EXCLUDE_CHANNELS
 ))
 
-DEFAULT_COLUMNS = dict(zip(range(33), DEFAULT_COLUMNS_LIST))
+DEFAULT_COLUMNS = dict(zip(range(34), DEFAULT_COLUMNS_LIST))
 
 
 def create_test_extraction_data():
@@ -758,7 +759,7 @@ def _make_expression_mat_sa(enrichment_type):
         raise ValueError("enrichment_type must be none, positive, or negative")
 
     if enrichment_type == "none":
-        all_data = pd.DataFrame(np.zeros((120, 33)))
+        all_data = pd.DataFrame(np.zeros((120, 34)))
         # Assigning values to the patient label and cell label columns
         # We create data for two fovs, with the second fov being the same as the first but the
         # cell expression data for marker 1 and marker 2 are inverted. cells 0-59 are fov8 and
@@ -790,7 +791,7 @@ def _make_expression_mat_sa(enrichment_type):
         all_patient_data.loc[all_patient_data.iloc[:, 31] == 0, settings.CELL_TYPE] = "Pheno3"
         return all_patient_data
     elif enrichment_type == "positive":
-        all_data_pos = pd.DataFrame(np.zeros((160, 33)))
+        all_data_pos = pd.DataFrame(np.zeros((160, 34)))
         # Assigning values to the patient label and cell label columns
         all_data_pos.loc[0:79, 30] = "fov8"
         all_data_pos.loc[80:, 30] = "fov9"
@@ -837,7 +838,7 @@ def _make_expression_mat_sa(enrichment_type):
                                  settings.CELL_TYPE] = "Pheno3"
         return all_patient_data_pos
     elif enrichment_type == "negative":
-        all_data_neg = pd.DataFrame(np.zeros((120, 33)))
+        all_data_neg = pd.DataFrame(np.zeros((120, 34)))
         # Assigning values to the patient label and cell label columns
         all_data_neg.loc[0:59, 30] = "fov8"
         all_data_neg.loc[60:, 30] = "fov9"
@@ -955,7 +956,7 @@ def _make_expression_mat_sa_utils():
     """
 
     # Create example all_patient_data cell expression matrix
-    all_data = pd.DataFrame(np.zeros((10, 33)))
+    all_data = pd.DataFrame(np.zeros((10, 34)))
 
     # Assigning values to the patient label and cell label columns
     all_data[30] = "fov8"
@@ -966,7 +967,8 @@ def _make_expression_mat_sa_utils():
         24: settings.CELL_LABEL,
         30: settings.FOV_ID,
         31: settings.CLUSTER_ID,
-        32: settings.CELL_TYPE
+        32: settings.CELL_TYPE,
+        33: settings.CELL_LINEAGE
     }
     all_data = all_data.rename(colnames, axis=1)
 

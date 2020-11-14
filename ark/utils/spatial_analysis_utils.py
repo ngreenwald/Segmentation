@@ -119,7 +119,7 @@ def get_pos_cell_labels_cluster(pheno, current_fov_neighborhood_data,
 
 def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
                            current_fov_data=None, current_fov_channel_data=None,
-                           cluster_ids=None, cell_types_analyze=None, thresh_vec=None,
+                           cluster_ids=None, thresh_vec=None,
                            cell_label_col=settings.CELL_LABEL, cell_type_col=settings.CLUSTER_ID):
     """Finds positive cell labels and creates matrix with counts for cells positive for
     corresponding markers. Computes close_num matrix for both Cell Label and Threshold spatial
@@ -132,7 +132,7 @@ def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
     corresponding to both markers (for instance markers 1 and 2 would be in index [0, 1]).
 
     Args:
-        dist_mat (numpy.ndarray):
+        dist_mat (xaray.DataArray):
             cells x cells matrix with the euclidian distance between centers of corresponding cells
         dist_lim (int):
             threshold for spatial enrichment distance proximity
@@ -144,8 +144,6 @@ def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
             data of only column markers for Channel Analysis
         cluster_ids (numpy.ndarray):
             all the cell phenotypes in Cluster Analysis
-        cell_types_analyze (list):
-            a list of the cell types we wish to analyze, if None we set it equal to all cell types
         thresh_vec (numpy.ndarray):
             matrix of thresholds column for markers
         cell_label_col (str):
@@ -184,10 +182,7 @@ def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
     mark1_num = []
     mark1poslabels = []
 
-    dist_mat_bin = xr.DataArray(
-        (dist_mat.values < dist_lim).astype(np.int8),
-        coords=dist_mat.coords
-    )
+    dist_mat_bin = (dist_mat < dist_lim).astype(np.int8)
 
     for j in range(num):
         if analysis_type == "cluster":
@@ -204,13 +199,6 @@ def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
                                             current_marker=current_fov_channel_data.columns[j]))
         mark1_num.append(len(mark1poslabels[j]))
 
-    # we'll need this because for cluster-based context-dependent randomization
-    # we need to facet our randomization of labels based on the cell_types and associated
-    # cell_ids the user specifies
-    mark1labels_per_id = None
-    if analysis_type == "cluster":
-        mark1labels_per_id = dict(zip(cluster_ids, mark1poslabels))
-
     # iterating k from [j, end] cuts out 1/2 the steps (while symmetric)
     for j, m1n in enumerate(mark1_num):
         for k, m2n in enumerate(mark1_num[j:], j):
@@ -224,7 +212,7 @@ def compute_close_cell_num(dist_mat, dist_lim, analysis_type,
             # symmetry :)
             close_num[k, j] = close_num[j, k]
 
-    return close_num, mark1_num, mark1labels_per_id
+    return close_num, mark1_num
 
 
 def compute_close_cell_num_random(marker_nums, dist_mat, dist_lim, bootstrap_num):
@@ -234,7 +222,7 @@ def compute_close_cell_num_random(marker_nums, dist_mat, dist_lim, bootstrap_num
     Args:
         marker_nums (numpy.ndarray):
             list of cell counts of each marker type
-        dist_mat (numpy.ndarray):
+        dist_mat (xarray.DataArray):
             cells x cells matrix with the euclidian distance between centers of corresponding cells
         dist_lim (int):
             threshold for spatial enrichment distance proximity
@@ -250,17 +238,14 @@ def compute_close_cell_num_random(marker_nums, dist_mat, dist_lim, bootstrap_num
     close_num_rand = np.zeros((
         len(marker_nums), len(marker_nums), bootstrap_num), dtype='int')
 
-    dist_mat_bin = xr.DataArray(
-        (dist_mat.values < dist_lim).astype(np.int8),
-        coords=dist_mat.coords
-    )
+    dist_mat_bin = (dist_mat < dist_lim).astype(np.int8)
 
     for j, m1n in enumerate(marker_nums):
         for k, m2n in enumerate(marker_nums[j:], j):
             samples_dim = (m1n * m2n, bootstrap_num)
-            dist_mat_bin_flattened = dist_mat_bin.values.flatten()
+            dist_mat_bin_flat = dist_mat_bin.values.flatten()
             count_close_num_rand_hits = np.sum(
-                np.random.choice(dist_mat_bin_flattened, samples_dim, True),
+                np.random.choice(dist_mat_bin_flat, samples_dim, replace=True),
                 axis=0
             )
 
@@ -269,6 +254,132 @@ def compute_close_cell_num_random(marker_nums, dist_mat, dist_lim, bootstrap_num
             close_num_rand[k, j, :] = close_num_rand[j, k, :]
 
     return close_num_rand
+
+
+def compute_close_cell_num_random_context(marker_nums, dist_mat, dist_lim, bootstrap_num,
+                                          thresh_vec, current_fov_data, current_fov_channel_data,
+                                          cell_lin_col=settings.CELL_LINEAGE,
+                                          cell_label_col=settings.CELL_LABEL):
+    """Runs a context-dependent bootstrapping procedure to sample cell labels randomly faceted
+    by which cell type they are based on their FlowSOM ID. Only for channel enrichment.
+
+    Args:
+        marker_nums (numpy.ndarray):
+            list of cell counts of each marker type
+        dist_mat (xarray.DataArray):
+            cells x cells matrix with the euclidian distance
+            between centers of corresponding cells
+        dist_lim (int):
+            threshold for spatial enrichment distance proximity
+        bootstrap_num (int):
+            number of permutations
+        thresh_vec (numpy.ndarray):
+            matrix of thresholds column for markers
+        current_fov_data (pandas.DataFrame):
+            data for specific patient in expression matrix
+        current_fov_channel_data (pandas.DataFrame):
+            data of only column markers for Channel Analysis
+        cell_lin_col (str):
+            the name of the column in current_fov_data which contains the FlowSOM ID
+        cell_label_col (str):
+            the name of the column in current_fov_data which identifies the cell labels
+
+    Returns:
+        numpy.ndarray:
+            Large matrix of random positive marker counts for every permutation in the bootstrap
+    """
+
+    if cell_lin_col not in current_fov_data.columns.values:
+        raise ValueError("cell_lin_col %s does not exist in current_fov_data")
+
+    if cell_label_col not in current_fov_data.columns.values:
+        raise ValueError("cell_label_col %s does not exist in current_fov_data")
+
+    # Create close_num_rand
+    close_num_rand_context = np.zeros((
+        len(marker_nums), len(marker_nums), bootstrap_num), dtype='int')
+
+    # subset dist_mat_bin by dist_lim
+    dist_mat_bin = (dist_mat < dist_lim).astype(np.int8)
+
+    # store the indices corresponding to each cell_lin in current_fov_data
+    cell_lin_indices = {cl: current_fov_data[current_fov_data[cell_lin_col] == cl].index.values
+                        for cl in current_fov_data[cell_lin_col].unique()}
+
+    # store the cell labels corresponding to each cell_lin in current_lin_labels
+    cell_lin_labels = {cl: current_fov_data[current_fov_data[cell_lin_col] == cl]
+                       [cell_label_col].values for cl in current_fov_data[cell_lin_col].unique()}
+
+    # create a dataframe containing cell_lin count information per marker
+    marker_count_data = pd.DataFrame(columns=cell_lin_indices.keys())
+
+    for i in range(len(marker_nums)):
+        marker_col = current_fov_channel_data.columns[i]
+        marker_pos_select = current_fov_channel_data[marker_col] > thresh_vec[i]
+        marker_pos_inds = current_fov_channel_data[marker_pos_select].index.values
+
+        marker_counts = {m: [len(set(marker_pos_inds).intersection(set(
+            cell_lin_indices[m])))] for m in cell_lin_indices}
+
+        marker_count_data = pd.concat([marker_count_data, pd.DataFrame.from_dict(marker_counts)])
+
+    marker_count_data.index = np.arange(marker_count_data.shape[0])
+
+    for j, m1n in enumerate(marker_nums):
+        for k, m2n in enumerate(marker_nums[j:], j):
+            # where we'll be storing our final dist matrices
+            dist_mats_flattened = None
+
+            # we will need to generate random values corresponding to each
+            # j-k lineage-lineage pair, so if there are four lineages, there
+            # will be 16 pairings we'll need to take into account
+            for lin_index_row, cl_row in enumerate(cell_lin_labels):
+                # get the total markers for lineage type corresponding to marker j
+                markers_row_cl = marker_count_data.loc[j, cl_row]
+
+                # and the respective row labels too
+                cl_row_labels = cell_lin_labels[cl_row]
+
+                for lin_index_col, cl_col in enumerate(cell_lin_labels):
+                    # get the total markers for lineage type corresponding to marker k
+                    markers_col_cl = marker_count_data.loc[k, cl_col]
+                    cl_col_labels = cell_lin_labels[cl_col]
+
+                    # now subset the distance matrix accordingly
+                    dist_mat_bin_sub = dist_mat_bin.loc[cl_row_labels,
+                                                        cl_col_labels].values.flatten()
+
+                    # make sure we subset the right number of elements per bootstrap
+                    values_sample_size = (markers_row_cl * markers_col_cl, bootstrap_num)
+
+                    # sample with replacement from the subsetted matrix
+                    cl_dist_mat_values = np.random.choice(dist_mat_bin_sub, values_sample_size,
+                                                          replace=True)
+
+                    # for some reason this does not work, really want it to
+                    # because it's much more memory efficient
+                    # # sum over each row to get the context-based close_num hits
+                    # count_close_num_context_rand_hits = np.sum(cl_dist_mat_values, axis=0)
+
+                    # # add these to their respective marker pair bootstrap entry
+                    # close_num_rand_context[j, k, :] += count_close_num_context_rand_hits
+                    # close_num_rand_context[k, j, :] += count_close_num_context_rand_hits
+
+                    # and add the values to each bootstrap row of dist_mats_flattened
+                    if dist_mats_flattened is None:
+                        dist_mats_flattened = cl_dist_mat_values
+                    else:
+                        dist_mats_flattened = np.concatenate([dist_mats_flattened,
+                                                              cl_dist_mat_values])
+
+            # sum over each row to get the context-based close_num hits
+            count_close_num_context_rand_hits = np.sum(dist_mats_flattened, axis=0)
+
+            # and set corresponding entries to the close_num hits vector
+            close_num_rand_context[j, k, :] = count_close_num_context_rand_hits
+            close_num_rand_context[k, j, :] = count_close_num_context_rand_hits
+
+    return close_num_rand_context
 
 
 def calculate_enrichment_stats(close_num, close_num_rand):
